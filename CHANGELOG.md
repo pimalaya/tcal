@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made the library `no_std` (with `alloc`) and gated the binary behind a `cli` feature.
+
+  With no features it is a `no_std` core: parse an iCalendar and project it to TOML and back (`ical`, `template`, `edit`, `error`), including the format-preserving editor that `apply` relies on. The `cli` feature (the default) adds the binary, the `template` and `edit` commands and the `$EDITOR` integration, pulling in `std`. Library consumers wanting only the projection no longer pay for clap/anyhow/the editor.
+
 - Split the oversized `edit` and `template` modules by domain and added a golden-fixture test database.
 
   `edit` became `edit/{tree,parse,render}.rs`, its standalone node helpers folded into a `Nodes` newtype; the parser into a `Parser` struct (so `edit::parse` is now `edit::tree::Calendar::parse`). `template` split its value layer and model into `template/{line,util,datetime,duration,recurrence,model}.rs`, keeping the projection/apply engine and facade in `template.rs`. Comments were trimmed throughout. New `tests/data/<name>.ics` + `<name>.<mode>.toml` fixtures (crafted plus real-world exports from ical.js, python-icalendar and libical), checked by `tests/fixtures.rs`: projection equality always, plus byte-exact round-trip unless a `<name>.lossy` marker says the source is not in calcard's canonical form (reordered `RRULE` tokens, all-day dates without `VALUE=DATE`, attendee parameters tcal does not model, ...). Drop a calendar from a bug report in and generate its expected TOML with `tcal template` to grow the database.

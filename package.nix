@@ -15,31 +15,26 @@
 }:
 
 let
-  version = "0.0.1";
-  hash = "";
-  cargoHash = "";
-
   emulator = stdenv.hostPlatform.emulator buildPackages;
   exe = stdenv.hostPlatform.extensions.executable;
 
 in
 rustPlatform.buildRustPackage {
-  inherit cargoHash version buildNoDefaultFeatures;
+  inherit buildNoDefaultFeatures;
 
   pname = "tcal";
+  version = "0.0.1";
+  cargoHash = "";
 
   src = fetchFromGitHub {
-    inherit hash;
     owner = "pimalaya";
     repo = "tcal";
-    rev = "v${version}";
+    rev = "v0.0.1";
+    hash = "";
   };
 
-  nativeBuildInputs = lib.optional (installManPages || installShellCompletions) installShellFiles;
-
+  nativeBuildInputs = [ installShellFiles ];
   buildFeatures = buildFeatures ++ [ "cli" ];
-
-  cargoTestFlags = [ "--lib" ];
 
   postInstall =
     lib.optionalString (lib.hasInfix "wine" emulator) ''
@@ -62,7 +57,7 @@ rustPlatform.buildRustPackage {
     '';
 
   meta = {
-    description = "CLI and lib to edit calendar events as ergonomic TOML, written in Rust";
+    description = "CLI and lib to edit calendar components as ergonomic TOML, written in Rust";
     mainProgram = "tcal";
     homepage = "https://github.com/pimalaya/tcal";
     changelog = "https://github.com/pimalaya/tcal/blob/master/CHANGELOG.md";

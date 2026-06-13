@@ -1,5 +1,7 @@
 //! Parsing an iCalendar stream into a format-preserving [`Nodes`] tree.
 
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
+
 use crate::edit::tree::{Component, Item, Nodes, Property};
 
 /// A cursor over the unfolded logical lines of a stream, yielding the

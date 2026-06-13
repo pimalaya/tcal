@@ -1,5 +1,7 @@
 //! Folding content lines back to iCalendar bytes, and end-of-line detection.
 
+use alloc::string::String;
+
 /// Longest octet length of a physical line before folding (RFC 5545 3.1).
 const MAX_LINE_OCTETS: usize = 75;
 

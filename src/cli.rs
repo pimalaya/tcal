@@ -11,6 +11,7 @@
 //! the only path back to an iCalendar is `edit`, where the original is still in
 //! hand.
 
+use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
 use std::{
     fs,
     io::{Read, Write, stdin, stdout},

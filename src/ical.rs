@@ -1,5 +1,7 @@
 //! Thin calcard adapter: parse raw iCalendar text into an [`ICalendar`].
 
+use alloc::format;
+
 use calcard::{Entry, icalendar::ICalendar};
 
 use crate::error::{Result, TcalError};

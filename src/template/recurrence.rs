@@ -1,6 +1,14 @@
 //! Recurrence rules (`RRULE`) as dotted `<prefix>.*` keys of friendly parts,
 //! with a raw escape hatch for parts tcal does not model.
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use calcard::icalendar::ICalendarEntry;
 use toml_edit::TableLike;
 

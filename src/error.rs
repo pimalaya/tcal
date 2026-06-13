@@ -2,6 +2,7 @@
 
 use core::result;
 
+use alloc::string::String;
 use thiserror::Error;
 
 /// The global `Error` enum of the library.

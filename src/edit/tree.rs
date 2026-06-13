@@ -3,6 +3,8 @@
 
 use core::fmt;
 
+use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
+
 use crate::edit::{
     parse::{Parser, Stop},
     render::{eol_of, render},
@@ -404,6 +406,13 @@ impl Nodes {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{
+        format,
+        string::{String, ToString},
+        vec,
+        vec::Vec,
+    };
+
     use super::Calendar;
 
     const SAMPLE: &str = "BEGIN:VCALENDAR\r\n\

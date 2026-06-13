@@ -1,6 +1,14 @@
 //! The modeled component vocabulary: each [`Spec`]'s [`Field`]s, and how
 //! every [`Kind`] of value projects to and parses from TOML.
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
 use toml_edit::TableLike;
 

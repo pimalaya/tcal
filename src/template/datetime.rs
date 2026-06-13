@@ -1,6 +1,8 @@
 //! Friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` date-times to and from
 //! iCalendar digit forms.
 
+use alloc::{borrow::ToOwned, format, string::String};
+
 use calcard::common::PartialDateTime;
 
 /// Shared hint for the friendly date keys: a concrete example date-time.

@@ -1,6 +1,13 @@
 //! Small value helpers shared across projection and apply: TOML rendering,
 //! iCalendar text escaping, and reading calcard entry values.
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use calcard::icalendar::{ICalendarEntry, ICalendarParameterName, ICalendarValue};
 use toml_edit::{Array, Item, TableLike, Value};
 

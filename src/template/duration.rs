@@ -1,6 +1,14 @@
 //! Durations (`DURATION`, an alarm `TRIGGER` offset) as dotted
 //! `<key>.{week,day,hour,min,sec}` magnitude keys, the sign implied.
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use calcard::icalendar::ICalendarEntry;
 use toml_edit::TableLike;
 

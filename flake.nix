@@ -1,5 +1,5 @@
 {
-  description = "CLI and lib to edit calendar events as ergonomic TOML, written in Rust";
+  description = "CLI and lib to edit calendar components as ergonomic TOML, written in Rust";
 
   inputs = {
     nixpkgs = {

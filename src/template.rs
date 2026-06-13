@@ -16,6 +16,14 @@ mod model;
 mod recurrence;
 mod util;
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use calcard::icalendar::{
     ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry, ICalendarParameterName,
 };
@@ -452,6 +460,8 @@ fn block_has_content(table: &dyn TableLike, spec: &Spec) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{borrow::ToOwned, vec::Vec};
+
     use crate::ical;
 
     const SAMPLE: &str = "BEGIN:VCALENDAR\r\n\

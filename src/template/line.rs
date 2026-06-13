@@ -1,5 +1,7 @@
 //! Projected lines and their tab-aligned inline comments.
 
+use alloc::{borrow::ToOwned, format, string::String};
+
 /// Tab width assumed when aligning comments; their column is a multiple.
 const TAB_WIDTH: usize = 8;
 
