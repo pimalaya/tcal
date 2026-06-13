@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use pimalaya_cli::{error::ErrorReport, log::Logger, printer::StdoutPrinter};
 
-use tcard::cli::Cli;
+use tcal::cli::Cli;
 
 fn main() {
     let cli = Cli::parse();

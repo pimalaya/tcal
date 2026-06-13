@@ -1,70 +1,80 @@
-//! Projection between a calcard [`VCard`] and an ergonomic TOML
+//! Projection between a calcard [`ICalendar`] and an ergonomic TOML
 //! buffer.
 //!
-//! [`project`] turns a vCard into a fillable TOML form: known fields
-//! are prefilled, the rest are listed empty (an empty value means the
-//! same as a removed line, so nothing is commented out). A hint, when
-//! useful, sits inline next to the value, and hints within a block are
-//! aligned to a common column. [`apply`] takes the original vCard plus
-//! the edited buffer and produces an updated vCard, rebuilding the
-//! modeled fields from TOML while carrying every unmodeled property
-//! (custom `X-*`, vendor extensions, ...) verbatim.
+//! [`project`] turns the first `VEVENT` of an iCalendar into a fillable
+//! TOML form: known fields are prefilled, the rest are listed empty (an
+//! empty value means the same as a removed line, so nothing is commented
+//! out). Cryptic date-times (`20260613T140000`) become a friendly
+//! `2026-06-13 14:00`, and the time zone is broken out onto its own key.
+//! [`apply`] takes the original iCalendar plus the edited buffer and
+//! produces an updated iCalendar, rebuilding the modeled `VEVENT`
+//! properties from TOML while carrying every unmodeled property
+//! (custom `X-*`, ...) and every other component (`VALARM`,
+//! `VTIMEZONE`, ...) verbatim.
+//!
+//! `UID` and `DTSTAMP` are intentionally not modeled: they are managed
+//! by the app (seeded for new events, preserved otherwise) and cannot be
+//! set through the buffer.
 //!
 //! The buffer is an editing affordance, not an interchange format:
-//! `apply` always needs the original vCard, because that is where
-//! unmodeled properties live.
+//! `apply` always needs the original iCalendar, because that is where
+//! unmodeled properties and sibling components live.
 //!
 //! NOTE: TOML attributes every bare key after a `[table]` / `[[array]]`
-//! header to that table, so [`FIELDS`] lists all scalar/list keys
-//! first and every sectioned property (`N`, `EMAIL`, `ADR`, ...) last.
+//! header to that table, so [`FIELDS`] lists all scalar/list keys first
+//! and every sectioned property (`ATTENDEE`) last.
 
 use std::fmt::Write as _;
 
 use calcard::{
-    common::IanaString,
-    vcard::{
-        VCard, VCardEntry, VCardParameterName, VCardParameterValue, VCardProperty, VCardValue,
-        VCardVersion,
+    common::PartialDateTime,
+    icalendar::{
+        ICalendar, ICalendarComponentType, ICalendarEntry, ICalendarParameterName,
+        ICalendarProperty,
     },
 };
 use toml_edit::{DocumentMut, Item, TableLike};
 
-use crate::error::{Result, TcardError};
+use crate::error::{Result, TcalError};
 
-/// Project a vCard into a fillable TOML form.
+/// Project the first `VEVENT` of an iCalendar into a fillable TOML form.
 ///
-/// An empty [`VCard`] yields a blank template: `uid` first, then the
-/// rest of the bare keys as one block, sections last.
-pub fn project(vcard: &VCard, version: VCardVersion) -> String {
+/// An iCalendar with no `VEVENT` yields a blank template: the bare keys
+/// first as one block, sections last.
+pub fn project(ical: &ICalendar) -> String {
+    let event = ical
+        .components
+        .iter()
+        .find(|component| component.component_type == ICalendarComponentType::VEvent);
+
     let mut out = String::new();
 
-    let _ = writeln!(out, "# vCard {version} as TOML, edited by tcard.");
+    let _ = writeln!(out, "# iCalendar VEVENT as TOML, edited by tcal.");
     let _ = writeln!(out, "#");
     let _ = writeln!(
         out,
-        "# Fill what you need; empty fields are ignored. Properties"
+        "# Fill what you need; empty fields are ignored. Properties and"
     );
     let _ = writeln!(
         out,
-        "# tcard does not model are kept verbatim, not shown here."
+        "# components tcal does not model (VALARM, VTIMEZONE, ...) are"
     );
+    let _ = writeln!(out, "# kept verbatim, not shown here.");
 
-    let collect = |field: &Field| -> Vec<&VCardEntry> {
-        vcard
-            .entries
-            .iter()
-            .filter(|entry| entry.name.as_str() == field.name)
-            .collect()
+    let collect = |field: &Field| -> Vec<&ICalendarEntry> {
+        event
+            .map(|event| {
+                event
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.name.as_str() == field.name)
+                    .collect()
+            })
+            .unwrap_or_default()
     };
 
-    // uid leads, set off by a blank line above and below.
-    let _ = writeln!(out);
-    emit_lines(&mut out, &FIELDS[0].lines(&collect(&FIELDS[0])), 0);
-    let _ = writeln!(out);
-
-    // The remaining bare keys form one block with a shared comment
-    // column.
-    let bare: Vec<&Field> = FIELDS[1..]
+    // The bare keys form one block with a shared comment column.
+    let bare: Vec<&Field> = FIELDS
         .iter()
         .take_while(|field| field.kind.is_simple())
         .collect();
@@ -72,10 +82,11 @@ pub fn project(vcard: &VCard, version: VCardVersion) -> String {
         .iter()
         .flat_map(|field| field.lines(&collect(field)))
         .collect();
+    let _ = writeln!(out);
     emit_lines(&mut out, &bare_lines, comment_column(bare_lines.iter()));
 
     // Each section is set off by a blank line and aligned within itself.
-    for field in &FIELDS[1 + bare.len()..] {
+    for field in &FIELDS[bare.len()..] {
         let _ = writeln!(out);
         let lines = field.lines(&collect(field));
         emit_lines(&mut out, &lines, comment_column(lines.iter()));
@@ -84,39 +95,57 @@ pub fn project(vcard: &VCard, version: VCardVersion) -> String {
     out
 }
 
-/// Apply an edited TOML buffer onto the original vCard.
+/// Apply an edited TOML buffer onto the original iCalendar.
 ///
-/// Modeled fields are rebuilt from the buffer; unmodeled properties
-/// of `original` are preserved verbatim. The result is serialized by
-/// calcard at the requested `version`, so output is normalized (line
-/// folding, parameter casing) but lossless for unknown properties.
-pub fn apply(original: &VCard, edited_toml: &str, version: VCardVersion) -> Result<String> {
-    let doc: DocumentMut = edited_toml.parse().map_err(TcardError::ParseToml)?;
+/// The first `VEVENT`'s modeled fields are rebuilt from the buffer; its
+/// unmodeled properties (including the app-managed `UID` and `DTSTAMP`)
+/// and every sibling component are preserved verbatim. The result is
+/// serialized by calcard, so output is normalized (line folding,
+/// parameter casing) but lossless for unknown properties.
+pub fn apply(original: &ICalendar, edited_toml: &str) -> Result<String> {
+    let doc: DocumentMut = edited_toml.parse().map_err(TcalError::ParseToml)?;
 
-    let mut assembled = String::from("BEGIN:VCARD\r\n");
-    let _ = write!(assembled, "VERSION:{version}\r\n");
-
+    // Emit the modeled lines into a throwaway VEVENT, then let calcard
+    // parse them back into entries (with their parameters and typed
+    // values) rather than hand-building them.
+    let mut assembled = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n");
     for field in FIELDS {
         field.emit(&doc, &mut assembled);
     }
+    assembled.push_str("END:VEVENT\r\nEND:VCALENDAR\r\n");
 
-    assembled.push_str("END:VCARD\r\n");
+    let rebuilt = crate::ical::parse(&assembled)?;
+    let modeled: Vec<ICalendarEntry> = rebuilt
+        .components
+        .iter()
+        .find(|component| component.component_type == ICalendarComponentType::VEvent)
+        .map(|event| {
+            event
+                .entries
+                .iter()
+                .filter(|entry| is_modeled(&entry.name))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
 
-    let mut rebuilt = crate::vcard::parse(&assembled)?;
-    rebuilt.entries.retain(|entry| is_data(&entry.name));
+    let mut out = original.clone();
+    let event = out
+        .components
+        .iter_mut()
+        .find(|component| component.component_type == ICalendarComponentType::VEvent)
+        .ok_or(TcalError::NoEvent)?;
 
-    for entry in &original.entries {
-        if is_data(&entry.name) && !is_modeled(&entry.name) {
-            rebuilt.entries.push(entry.clone());
-        }
-    }
+    let preserved: Vec<ICalendarEntry> = event
+        .entries
+        .iter()
+        .filter(|entry| is_data(&entry.name) && !is_modeled(&entry.name))
+        .cloned()
+        .collect();
 
-    let mut out = String::new();
-    rebuilt
-        .write_to(&mut out, version)
-        .expect("writing a vCard to a String is infallible");
+    event.entries = modeled.into_iter().chain(preserved).collect();
 
-    Ok(out)
+    Ok(out.to_string())
 }
 
 /// A projected line: a left side and an optional inline hint.
@@ -126,49 +155,46 @@ struct Line {
 }
 
 /// Shape of a modeled property, driving both projection and emission.
-///
-/// `TYPE` never changes a property's shape (an `EMAIL` is one value
-/// whether home or work), so typed properties keep a single section
-/// and list their accepted types in a trailing comment.
 enum Kind {
-    /// Single text value (`FN`, `UID`, ...).
-    Scalar,
+    /// Single value rendered as a bare key. `escape` is set for
+    /// TEXT-typed properties (`UID`, `SUMMARY`), cleared for properties
+    /// calcard does not unescape (`URL`, `STATUS`, `RRULE`, ...).
+    Scalar { escape: bool },
 
-    /// Free-form text, projected as a TOML multi-line literal (`NOTE`).
+    /// Free-form text, projected as a TOML multi-line literal
+    /// (`DESCRIPTION`).
     Text,
 
-    /// Repeated or multi-valued text, joined on `sep` in the vCard
-    /// (`NICKNAME`, `CATEGORIES`, `ORG`).
+    /// Repeated or multi-valued text, joined on `sep` in the iCalendar
+    /// (`CATEGORIES`).
     List { sep: char },
 
-    /// One structured value with named, ordered components (`N`).
-    Structured(&'static [&'static str]),
+    /// Date or date-time, projected as a friendly `YYYY-MM-DD[ HH:MM]`
+    /// plus an adjacent `<key>_tz` time-zone key (`DTSTART`, `DTEND`).
+    Date,
 
-    /// Repeatable property with an optional `TYPE` and a single value
-    /// (`EMAIL`, `TEL`, `URL`, `PHOTO`).
-    Typed { types: &'static [&'static str] },
+    /// Calendar address, projected without its `mailto:` scheme
+    /// (`ORGANIZER`).
+    CalAddress,
 
-    /// Repeatable property with an optional `TYPE` and named, ordered
-    /// components (`ADR`).
-    TypedStructured {
-        types: &'static [&'static str],
-        components: &'static [&'static str],
-    },
+    /// Repeatable attendee with the common `CN` / `ROLE` / `PARTSTAT`
+    /// parameters (`ATTENDEE`).
+    Attendee,
 }
 
 impl Kind {
-    /// A bare key (vs a `[table]` / `[[array]]` section).
+    /// A bare key (vs a `[[array]]` section).
     fn is_simple(&self) -> bool {
-        matches!(self, Kind::Scalar | Kind::Text | Kind::List { .. })
+        !matches!(self, Kind::Attendee)
     }
 }
 
-/// A modeled vCard property and how it maps to TOML.
+/// A modeled VEVENT property and how it maps to TOML.
 struct Field {
     /// TOML key.
     key: &'static str,
 
-    /// Canonical vCard property name (matches calcard's `as_str`).
+    /// Canonical iCalendar property name (matches calcard's `as_str`).
     name: &'static str,
 
     /// Inline hint shown next to the value, only where it is not
@@ -179,77 +205,75 @@ struct Field {
     kind: Kind,
 }
 
-/// `N` components, in RFC 6350 order.
-const NAME_COMPONENTS: &[&str] = &["family", "given", "additional", "prefixes", "suffixes"];
-
-/// `ADR` components, in RFC 6350 order.
-const ADR_COMPONENTS: &[&str] = &[
-    "pobox", "ext", "street", "locality", "region", "code", "country",
-];
-
-/// Common `TYPE` sets, shared between properties.
-const PLACE_TYPES: &[&str] = &["home", "work"];
-const TEL_TYPES: &[&str] = &[
-    "home",
-    "work",
-    "cell",
-    "fax",
-    "voice",
-    "video",
-    "pager",
-    "text",
-    "textphone",
-];
+/// Shared hint for the friendly date keys.
+const DATE_HINT: &str = "e.g. 2026-06-13 14:00, or 2026-06-13 for all-day; add UTC for UTC";
 
 /// The modeled vocabulary. Everything outside this list is preserved
 /// verbatim by [`apply`] but not surfaced in the scaffold.
 ///
-/// `uid` leads, the remaining bare keys follow as one block (`note`
-/// last, so its literal block sits at the end), and the sectioned
-/// properties come last: a TOML document root ends at the first table
-/// or array-of-tables header.
+/// The bare keys lead as one block (`description` last, so its literal
+/// block sits at the end), and the sectioned `attendee` comes last: a
+/// TOML document root ends at the first array-of-tables header.
 const FIELDS: &[Field] = &[
     Field {
-        key: "uid",
-        name: "UID",
-        hint: None,
-        kind: Kind::Scalar,
-    },
-    Field {
-        key: "fn",
-        name: "FN",
+        key: "summary",
+        name: "SUMMARY",
         hint: Some("required"),
-        kind: Kind::Scalar,
+        kind: Kind::Scalar { escape: true },
     },
     Field {
-        key: "kind",
-        name: "KIND",
-        hint: Some("e.g. individual, group, org"),
-        kind: Kind::Scalar,
+        key: "dtstart",
+        name: "DTSTART",
+        hint: Some(DATE_HINT),
+        kind: Kind::Date,
     },
     Field {
-        key: "nickname",
-        name: "NICKNAME",
+        key: "dtend",
+        name: "DTEND",
+        hint: Some(DATE_HINT),
+        kind: Kind::Date,
+    },
+    Field {
+        key: "duration",
+        name: "DURATION",
+        hint: Some("e.g. PT1H30M; an alternative to dtend"),
+        kind: Kind::Scalar { escape: false },
+    },
+    Field {
+        key: "location",
+        name: "LOCATION",
         hint: None,
-        kind: Kind::List { sep: ',' },
+        kind: Kind::Scalar { escape: true },
     },
     Field {
-        key: "org",
-        name: "ORG",
-        hint: None,
-        kind: Kind::List { sep: ';' },
+        key: "status",
+        name: "STATUS",
+        hint: Some("e.g. CONFIRMED, TENTATIVE, CANCELLED"),
+        kind: Kind::Scalar { escape: false },
     },
     Field {
-        key: "title",
-        name: "TITLE",
-        hint: None,
-        kind: Kind::Scalar,
+        key: "class",
+        name: "CLASS",
+        hint: Some("e.g. PUBLIC, PRIVATE, CONFIDENTIAL"),
+        kind: Kind::Scalar { escape: false },
     },
     Field {
-        key: "role",
-        name: "ROLE",
-        hint: None,
-        kind: Kind::Scalar,
+        key: "transparency",
+        name: "TRANSP",
+        hint: Some("e.g. OPAQUE, TRANSPARENT"),
+        kind: Kind::Scalar { escape: false },
+    },
+    Field {
+        key: "priority",
+        name: "PRIORITY",
+        hint: Some("0 = undefined, 1 = highest, 9 = lowest"),
+        kind: Kind::Scalar { escape: false },
+    },
+    Field {
+        key: "url",
+        name: "URL",
+        hint: Some("e.g. https://example.com/event"),
+        kind: Kind::Scalar { escape: false },
     },
     Field {
         key: "categories",
@@ -258,99 +282,42 @@ const FIELDS: &[Field] = &[
         kind: Kind::List { sep: ',' },
     },
     Field {
-        key: "lang",
-        name: "LANG",
-        hint: None,
-        kind: Kind::List { sep: ',' },
+        key: "rrule",
+        name: "RRULE",
+        hint: Some("e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR"),
+        kind: Kind::Scalar { escape: false },
     },
     Field {
-        key: "bday",
-        name: "BDAY",
-        hint: Some("e.g. 1990-05-23"),
-        kind: Kind::Scalar,
+        key: "organizer",
+        name: "ORGANIZER",
+        hint: Some("email or cal-address"),
+        kind: Kind::CalAddress,
     },
     Field {
-        key: "anniversary",
-        name: "ANNIVERSARY",
-        hint: Some("e.g. 2014-09-21"),
-        kind: Kind::Scalar,
-    },
-    Field {
-        key: "geo",
-        name: "GEO",
-        hint: Some("e.g. geo:37.78,-122.40"),
-        kind: Kind::Scalar,
-    },
-    Field {
-        key: "tz",
-        name: "TZ",
-        hint: Some("e.g. America/New_York"),
-        kind: Kind::Scalar,
-    },
-    Field {
-        key: "note",
-        name: "NOTE",
+        key: "description",
+        name: "DESCRIPTION",
         hint: None,
         kind: Kind::Text,
     },
     Field {
-        key: "name",
-        name: "N",
+        key: "attendee",
+        name: "ATTENDEE",
         hint: None,
-        kind: Kind::Structured(NAME_COMPONENTS),
-    },
-    Field {
-        key: "email",
-        name: "EMAIL",
-        hint: None,
-        kind: Kind::Typed { types: PLACE_TYPES },
-    },
-    Field {
-        key: "tel",
-        name: "TEL",
-        hint: None,
-        kind: Kind::Typed { types: TEL_TYPES },
-    },
-    Field {
-        key: "address",
-        name: "ADR",
-        hint: None,
-        kind: Kind::TypedStructured {
-            types: PLACE_TYPES,
-            components: ADR_COMPONENTS,
-        },
-    },
-    Field {
-        key: "photo",
-        name: "PHOTO",
-        hint: Some("e.g. file:// or http://"),
-        kind: Kind::Typed { types: &[] },
-    },
-    Field {
-        key: "url",
-        name: "URL",
-        hint: None,
-        kind: Kind::Typed { types: PLACE_TYPES },
-    },
-    Field {
-        key: "impp",
-        name: "IMPP",
-        hint: Some("e.g. xmpp:jane@example.com"),
-        kind: Kind::Typed { types: PLACE_TYPES },
+        kind: Kind::Attendee,
     },
 ];
 
 impl Field {
     /// Render this field into projected lines.
-    fn lines(&self, entries: &[&VCardEntry]) -> Vec<Line> {
+    fn lines(&self, entries: &[&ICalendarEntry]) -> Vec<Line> {
         match &self.kind {
-            Kind::Scalar => {
+            Kind::Scalar { .. } => {
                 let value = entries
                     .first()
-                    .and_then(|entry| entry_text(entry))
+                    .map(|entry| scalar_text(entry))
                     .unwrap_or_default();
                 vec![Line {
-                    lhs: format!("{} = {}", self.key, toml_str(value)),
+                    lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
                 }]
             }
@@ -358,15 +325,20 @@ impl Field {
             Kind::Text => {
                 let value = entries
                     .first()
-                    .and_then(|entry| entry_text(entry))
+                    .map(|entry| scalar_text(entry))
                     .unwrap_or_default();
-                text_lines(self.key, value)
+                text_lines(self.key, &value)
             }
 
             Kind::List { .. } => {
                 let items: Vec<String> = entries
                     .iter()
-                    .flat_map(|entry| entry_texts(entry))
+                    .flat_map(|entry| {
+                        entry
+                            .values
+                            .iter()
+                            .filter_map(|value| value.as_text().map(str::to_owned))
+                    })
                     .collect();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_array(&items)),
@@ -374,68 +346,50 @@ impl Field {
                 }]
             }
 
-            Kind::Structured(components) => {
-                let values = entries
-                    .first()
-                    .map(|entry| entry_components(entry))
+            Kind::Date => {
+                let entry = entries.first();
+                let value = entry
+                    .and_then(|entry| entry.values.first())
+                    .and_then(|value| value.as_partial_date_time())
+                    .map(friendly_date)
                     .unwrap_or_default();
-                let mut lines = vec![Line {
-                    lhs: format!("[{}]", self.key),
-                    hint: None,
-                }];
-                lines.extend(component_lines(components, &values));
-                lines
-            }
+                let tz = entry
+                    .and_then(|entry| entry.parameters(&ICalendarParameterName::Tzid).next())
+                    .and_then(|value| value.as_text())
+                    .unwrap_or_default();
 
-            Kind::Typed { types } => {
-                let mut lines = Vec::new();
-
-                if entries.is_empty() {
-                    lines.push(Line {
-                        lhs: format!("[[{}]]", self.key),
-                        hint: None,
-                    });
-                    type_line(&mut lines, "", types);
-                    lines.push(Line {
-                        lhs: "value = \"\"".into(),
+                vec![
+                    Line {
+                        lhs: format!("{} = {}", self.key, toml_str(&value)),
                         hint: self.hint.map(str::to_owned),
-                    });
-                } else {
-                    for entry in entries {
-                        lines.push(Line {
-                            lhs: format!("[[{}]]", self.key),
-                            hint: None,
-                        });
-                        type_line(&mut lines, &type_strings(entry).join(","), types);
-                        let value = entry_text(entry).unwrap_or_default();
-                        lines.push(Line {
-                            lhs: format!("value = {}", toml_str(value)),
-                            hint: self.hint.map(str::to_owned),
-                        });
-                    }
-                }
-
-                lines
+                    },
+                    Line {
+                        lhs: format!("{}_tz = {}", self.key, toml_str(tz)),
+                        hint: Some("e.g. America/New_York; empty for UTC or floating".to_owned()),
+                    },
+                ]
             }
 
-            Kind::TypedStructured { types, components } => {
+            Kind::CalAddress => {
+                let value = entries
+                    .first()
+                    .and_then(|entry| entry_text(entry))
+                    .map(strip_mailto)
+                    .unwrap_or_default();
+                vec![Line {
+                    lhs: format!("{} = {}", self.key, toml_str(value)),
+                    hint: self.hint.map(str::to_owned),
+                }]
+            }
+
+            Kind::Attendee => {
                 let mut lines = Vec::new();
 
                 if entries.is_empty() {
-                    lines.push(Line {
-                        lhs: format!("[[{}]]", self.key),
-                        hint: None,
-                    });
-                    type_line(&mut lines, "", types);
-                    lines.extend(component_lines(components, &[]));
+                    attendee_block(&mut lines, None);
                 } else {
-                    for entry in entries {
-                        lines.push(Line {
-                            lhs: format!("[[{}]]", self.key),
-                            hint: None,
-                        });
-                        type_line(&mut lines, &type_strings(entry).join(","), types);
-                        lines.extend(component_lines(components, &entry_components(entry)));
+                    for entry in entries.iter().copied() {
+                        attendee_block(&mut lines, Some(entry));
                     }
                 }
 
@@ -444,7 +398,7 @@ impl Field {
         }
     }
 
-    /// Emit this field's vCard content line(s) from the edited `doc`
+    /// Emit this field's iCalendar content line(s) from the edited `doc`
     /// into `out`, skipping empty values.
     fn emit(&self, doc: &DocumentMut, out: &mut String) {
         let Some(item) = doc.get(self.key) else {
@@ -452,9 +406,16 @@ impl Field {
         };
 
         match &self.kind {
-            Kind::Scalar => {
+            Kind::Scalar {
+                escape: needs_escape,
+            } => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    push_line(out, &format!("{}:{}", self.name, escape(value)));
+                    let value = if *needs_escape {
+                        escape(value)
+                    } else {
+                        value.to_owned()
+                    };
+                    push_line(out, &format!("{}:{}", self.name, value));
                 }
             }
 
@@ -488,19 +449,24 @@ impl Field {
                 }
             }
 
-            Kind::Structured(components) => {
-                let Some(table) = item.as_table_like() else {
+            Kind::Date => {
+                let Some(value) = item.as_str().filter(|value| !value.is_empty()) else {
                     return;
                 };
+                let tz = doc
+                    .get(&format!("{}_tz", self.key))
+                    .and_then(|item| item.as_str())
+                    .filter(|value| !value.is_empty());
+                push_line(out, &date_line(self.name, value, tz));
+            }
 
-                let parts = read_components(table, components);
-
-                if parts.iter().any(|part| !part.is_empty()) {
-                    push_line(out, &format!("{}:{}", self.name, parts.join(";")));
+            Kind::CalAddress => {
+                if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
+                    push_line(out, &format!("{}:{}", self.name, ensure_mailto(value)));
                 }
             }
 
-            Kind::Typed { .. } => {
+            Kind::Attendee => {
                 for table in tables(item) {
                     let Some(value) = table
                         .get("value")
@@ -511,25 +477,11 @@ impl Field {
                     };
 
                     let mut line = self.name.to_string();
-                    push_type(&mut line, table);
+                    push_param(&mut line, "CN", table.get("cn"));
+                    push_param(&mut line, "ROLE", table.get("role"));
+                    push_param(&mut line, "PARTSTAT", table.get("partstat"));
                     line.push(':');
-                    line.push_str(&escape(value));
-                    push_line(out, &line);
-                }
-            }
-
-            Kind::TypedStructured { components, .. } => {
-                for table in tables(item) {
-                    let parts = read_components(table, components);
-
-                    if !parts.iter().any(|part| !part.is_empty()) {
-                        continue;
-                    }
-
-                    let mut line = self.name.to_string();
-                    push_type(&mut line, table);
-                    line.push(':');
-                    line.push_str(&parts.join(";"));
+                    line.push_str(&ensure_mailto(value));
                     push_line(out, &line);
                 }
             }
@@ -561,9 +513,9 @@ fn emit_lines(out: &mut String, lines: &[Line], column: usize) {
     }
 }
 
-/// Project a `note` as a TOML multi-line literal: `''''''` when empty,
-/// a `'''` block otherwise. Literal strings cannot contain `'''`, so
-/// such a value falls back to a basic string.
+/// Project a `description` as a TOML multi-line literal: `''''''` when
+/// empty, a `'''` block otherwise. Literal strings cannot contain
+/// `'''`, so such a value falls back to a basic string.
 fn text_lines(key: &str, value: &str) -> Vec<Line> {
     if value.is_empty() {
         return vec![Line {
@@ -596,70 +548,169 @@ fn text_lines(key: &str, value: &str) -> Vec<Line> {
     lines
 }
 
-/// Push a `type =` line with its accepted-types hint, when the
-/// property has a common type set.
-fn type_line(lines: &mut Vec<Line>, value: &str, types: &[&str]) {
-    if types.is_empty() {
-        return;
-    }
-
+/// Render one `[[attendee]]` block, filled or empty.
+fn attendee_block(lines: &mut Vec<Line>, entry: Option<&ICalendarEntry>) {
     lines.push(Line {
-        lhs: format!("type = {}", toml_str(value)),
-        hint: Some(format!("e.g. {}", types.join(" "))),
+        lhs: "[[attendee]]".into(),
+        hint: None,
+    });
+
+    let value = entry
+        .and_then(entry_text)
+        .map(strip_mailto)
+        .unwrap_or_default();
+    lines.push(Line {
+        lhs: format!("value = {}", toml_str(value)),
+        hint: Some("email or cal-address".to_owned()),
+    });
+
+    let cn = entry
+        .and_then(|entry| param(entry, &ICalendarParameterName::Cn))
+        .unwrap_or_default();
+    lines.push(Line {
+        lhs: format!("cn = {}", toml_str(&cn)),
+        hint: None,
+    });
+
+    let role = entry
+        .and_then(|entry| param(entry, &ICalendarParameterName::Role))
+        .unwrap_or_default();
+    lines.push(Line {
+        lhs: format!("role = {}", toml_str(&role)),
+        hint: Some("e.g. CHAIR, REQ-PARTICIPANT, OPT-PARTICIPANT".to_owned()),
+    });
+
+    let partstat = entry
+        .and_then(|entry| param(entry, &ICalendarParameterName::Partstat))
+        .unwrap_or_default();
+    lines.push(Line {
+        lhs: format!("partstat = {}", toml_str(&partstat)),
+        hint: Some("e.g. NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE".to_owned()),
     });
 }
 
-/// Render named components, filled or empty, in order.
-fn component_lines(components: &[&str], values: &[String]) -> Vec<Line> {
-    components
-        .iter()
-        .enumerate()
-        .map(|(index, component)| {
-            let value = values.get(index).map(String::as_str).unwrap_or_default();
-            Line {
-                lhs: format!("{component} = {}", toml_str(value)),
-                hint: None,
-            }
-        })
-        .collect()
-}
-
-/// Read named components from a TOML table, escaped and in order;
-/// missing components become empty strings.
-fn read_components(table: &dyn TableLike, components: &[&str]) -> Vec<String> {
-    components
-        .iter()
-        .map(|component| {
-            table
-                .get(component)
-                .and_then(|item| item.as_str())
-                .map(escape)
-                .unwrap_or_default()
-        })
-        .collect()
-}
-
-/// Append `;TYPE=<value>` to `line` when the table carries a
-/// non-empty `type`.
-fn push_type(line: &mut String, table: &dyn TableLike) {
-    if let Some(ty) = table
-        .get("type")
-        .and_then(|item| item.as_str())
-        .filter(|ty| !ty.is_empty())
-    {
-        line.push_str(";TYPE=");
-        line.push_str(ty);
+/// Build an iCalendar date line from a friendly value and optional time
+/// zone, falling back to the value verbatim when it is not in the
+/// friendly form (so power users can type a raw iCalendar value).
+fn date_line(name: &str, value: &str, tz: Option<&str>) -> String {
+    match parse_friendly_date(value) {
+        Some((date, None, _)) => format!("{name};VALUE=DATE:{date}"),
+        Some((date, Some(time), true)) => format!("{name}:{date}T{time}Z"),
+        Some((date, Some(time), false)) => match tz {
+            Some(zone) => format!("{name};TZID={zone}:{date}T{time}"),
+            None => format!("{name}:{date}T{time}"),
+        },
+        None => match tz {
+            Some(zone) => format!("{name};TZID={zone}:{value}"),
+            None => format!("{name}:{value}"),
+        },
     }
 }
 
-/// Push a vCard content line with CRLF, as the spec mandates.
+/// Parse a friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` into its iCalendar
+/// digit parts: the date (`YYYYMMDD`), an optional time (`HHMMSS`, or
+/// `None` for an all-day date), and whether it is UTC.
+fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)> {
+    let value = value.trim();
+    let (rest, utc) = match value
+        .strip_suffix(" UTC")
+        .or_else(|| value.strip_suffix(" utc"))
+    {
+        Some(rest) => (rest.trim_end(), true),
+        None => (value, false),
+    };
+
+    let mut parts = rest.split_whitespace();
+    let date = parts.next()?;
+    let time = parts.next();
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let mut ymd = date.split('-');
+    let year: u16 = ymd.next()?.parse().ok()?;
+    let month: u8 = ymd.next()?.parse().ok()?;
+    let day: u8 = ymd.next()?.parse().ok()?;
+    if ymd.next().is_some() {
+        return None;
+    }
+    let date = format!("{year:04}{month:02}{day:02}");
+
+    let time = match time {
+        None => None,
+        Some(time) => {
+            let mut hms = time.split(':');
+            let hour: u8 = hms.next()?.parse().ok()?;
+            let minute: u8 = hms.next()?.parse().ok()?;
+            let second: u8 = match hms.next() {
+                Some(second) => second.parse().ok()?,
+                None => 0,
+            };
+            if hms.next().is_some() {
+                return None;
+            }
+            Some(format!("{hour:02}{minute:02}{second:02}"))
+        }
+    };
+
+    Some((date, time, utc))
+}
+
+/// Render a calcard date-time as a friendly `YYYY-MM-DD[ HH:MM[:SS]]`,
+/// appending ` UTC` for a UTC value. A value with no time of day is an
+/// all-day date and renders as `YYYY-MM-DD`.
+fn friendly_date(dt: &PartialDateTime) -> String {
+    let (Some(year), Some(month), Some(day)) = (dt.year, dt.month, dt.day) else {
+        return String::new();
+    };
+    let date = format!("{year:04}-{month:02}-{day:02}");
+
+    let (Some(hour), Some(minute)) = (dt.hour, dt.minute) else {
+        return date;
+    };
+    let mut out = format!("{date} {hour:02}:{minute:02}");
+
+    if let Some(second) = dt.second.filter(|second| *second != 0) {
+        let _ = write!(out, ":{second:02}");
+    }
+    if matches!((dt.tz_hour, dt.tz_minute), (Some(0), Some(0))) {
+        out.push_str(" UTC");
+    }
+
+    out
+}
+
+/// Append `;NAME=value` to `line` when the table entry is non-empty,
+/// quoting the value when it carries a parameter delimiter.
+fn push_param(line: &mut String, name: &str, item: Option<&Item>) {
+    let Some(value) = item
+        .and_then(|item| item.as_str())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+
+    line.push(';');
+    line.push_str(name);
+    line.push('=');
+
+    if value.contains([',', ';', ':', '"']) {
+        line.push('"');
+        line.push_str(&value.replace('"', ""));
+        line.push('"');
+    } else {
+        line.push_str(value);
+    }
+}
+
+/// Push an iCalendar content line with CRLF, as the spec mandates.
 fn push_line(out: &mut String, line: &str) {
     out.push_str(line);
     out.push_str("\r\n");
 }
 
-/// Collect the TOML tables addressed by an array-of-tables
-/// (`[[key]]`) or an inline array of inline tables.
+/// Collect the TOML tables addressed by an array-of-tables (`[[key]]`)
+/// or an inline array of inline tables.
 fn tables(item: &Item) -> Vec<&dyn TableLike> {
     if let Some(array) = item.as_array_of_tables() {
         array.iter().map(|table| table as &dyn TableLike).collect()
@@ -674,64 +725,64 @@ fn tables(item: &Item) -> Vec<&dyn TableLike> {
     }
 }
 
-/// First value of an entry as text.
-fn entry_text(entry: &VCardEntry) -> Option<&str> {
+/// First value of an entry as text, falling back to its owned text form
+/// for typed values (integers, durations, recurrence rules, ...).
+fn scalar_text(entry: &ICalendarEntry) -> String {
+    if let Some(text) = entry.values.first().and_then(|value| value.as_text()) {
+        return text.to_owned();
+    }
+
+    entry
+        .values
+        .first()
+        .cloned()
+        .and_then(|value| value.into_text())
+        .map(|text| text.into_owned())
+        .unwrap_or_default()
+}
+
+/// First value of an entry as borrowed text.
+fn entry_text(entry: &ICalendarEntry) -> Option<&str> {
     entry.values.first().and_then(|value| value.as_text())
 }
 
-/// All texts of an entry, flattening structured components.
-fn entry_texts(entry: &VCardEntry) -> Vec<String> {
-    entry.values.iter().flat_map(value_strings).collect()
-}
-
-/// Ordered components of a structured entry (`N`, `ADR`).
-fn entry_components(entry: &VCardEntry) -> Vec<String> {
-    match entry.values.first() {
-        Some(VCardValue::Component(parts)) => parts.clone(),
-        _ => entry
-            .values
-            .iter()
-            .filter_map(|value| value.as_text().map(str::to_owned))
-            .collect(),
-    }
-}
-
-/// All texts carried by a single value.
-fn value_strings(value: &VCardValue) -> Vec<String> {
-    match value {
-        VCardValue::Component(parts) => parts.clone(),
-        other => other.as_text().map(str::to_owned).into_iter().collect(),
-    }
-}
-
-/// `TYPE` parameter values of an entry, lowercased.
-fn type_strings(entry: &VCardEntry) -> Vec<String> {
+/// First value of a named parameter as owned text.
+fn param(entry: &ICalendarEntry, name: &ICalendarParameterName) -> Option<String> {
     entry
-        .parameters(&VCardParameterName::Type)
-        .filter_map(param_text)
-        .collect()
+        .parameters(name)
+        .next()
+        .and_then(|value| value.as_text())
+        .map(str::to_owned)
 }
 
-/// Text form of a parameter value, for `TYPE`.
-fn param_text(value: &VCardParameterValue) -> Option<String> {
-    match value {
-        VCardParameterValue::Text(text) => Some(text.clone()),
-        VCardParameterValue::Type(ty) => Some(ty.as_str().to_lowercase()),
-        _ => None,
+/// A calendar address without its `mailto:` scheme, for display.
+fn strip_mailto(value: &str) -> &str {
+    value
+        .strip_prefix("mailto:")
+        .or_else(|| value.strip_prefix("MAILTO:"))
+        .unwrap_or(value)
+}
+
+/// A calendar address with a scheme: a bare address gains `mailto:`.
+fn ensure_mailto(value: &str) -> String {
+    if value.contains(':') {
+        value.to_owned()
+    } else {
+        format!("mailto:{value}")
     }
 }
 
-/// True unless the property is a structural marker calcard emits on
-/// its own (`BEGIN`, `END`, `VERSION`).
-fn is_data(name: &VCardProperty) -> bool {
+/// True unless the property is a structural marker calcard emits on its
+/// own (`BEGIN`, `END`, `VERSION`).
+fn is_data(name: &ICalendarProperty) -> bool {
     !matches!(
         name,
-        VCardProperty::Begin | VCardProperty::End | VCardProperty::Version
+        ICalendarProperty::Begin | ICalendarProperty::End | ICalendarProperty::Version
     )
 }
 
 /// True when the property is part of the modeled vocabulary.
-fn is_modeled(name: &VCardProperty) -> bool {
+fn is_modeled(name: &ICalendarProperty) -> bool {
     FIELDS.iter().any(|field| field.name == name.as_str())
 }
 
@@ -751,7 +802,7 @@ fn toml_array<S: AsRef<str>>(items: &[S]) -> String {
     array.to_string().trim().to_string()
 }
 
-/// Escape a vCard text value per RFC 6350 section 3.4.
+/// Escape an iCalendar text value per RFC 5545 section 3.3.11.
 fn escape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
 
@@ -770,145 +821,160 @@ fn escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use calcard::vcard::VCardVersion;
+    use crate::ical;
 
-    use crate::vcard;
-
-    const SAMPLE: &str = "BEGIN:VCARD\r\n\
-        VERSION:4.0\r\n\
-        FN:John Doe\r\n\
-        N:Doe;John;;;\r\n\
-        EMAIL;TYPE=work:john@work.example\r\n\
-        EMAIL;TYPE=home:john@home.example\r\n\
-        ADR;TYPE=home:;;123 Main St;Springfield;IL;62701;USA\r\n\
-        X-CUSTOM;TYPE=weird:keep me verbatim\r\n\
-        END:VCARD\r\n";
+    const SAMPLE: &str = "BEGIN:VCALENDAR\r\n\
+        VERSION:2.0\r\n\
+        PRODID:-//Test//EN\r\n\
+        BEGIN:VEVENT\r\n\
+        UID:abc@example\r\n\
+        DTSTAMP:20260101T000000Z\r\n\
+        DTSTART;TZID=America/New_York:20260613T140000\r\n\
+        DTEND;TZID=America/New_York:20260613T150000\r\n\
+        SUMMARY:Team sync\r\n\
+        LOCATION:Room 1\r\n\
+        STATUS:CONFIRMED\r\n\
+        CATEGORIES:work,meeting\r\n\
+        ATTENDEE;CN=Jane Doe;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:jane@example.com\r\n\
+        X-CUSTOM:keep me verbatim\r\n\
+        BEGIN:VALARM\r\n\
+        ACTION:DISPLAY\r\n\
+        TRIGGER:-PT15M\r\n\
+        END:VALARM\r\n\
+        END:VEVENT\r\n\
+        END:VCALENDAR\r\n";
 
     #[test]
     fn project_prefills_known_fields() {
-        let card = vcard::parse(SAMPLE).unwrap();
-        let toml = super::project(&card, VCardVersion::V4_0);
+        let ical = ical::parse(SAMPLE).unwrap();
+        let toml = super::project(&ical);
 
-        assert!(toml.contains("fn = \"John Doe\""));
-        assert!(toml.contains("family = \"Doe\""));
-        assert!(toml.contains("value = \"john@work.example\""));
-        assert!(toml.contains("street = \"123 Main St\""));
-        // Unmodeled properties never appear in the scaffold.
-        assert!(!toml.contains("X-CUSTOM"));
+        assert!(toml.contains("summary = \"Team sync\""));
+        assert!(toml.contains("dtstart = \"2026-06-13 14:00\""));
+        assert!(toml.contains("dtstart_tz = \"America/New_York\""));
+        assert!(toml.contains("location = \"Room 1\""));
+        assert!(toml.contains("value = \"jane@example.com\""));
+        assert!(toml.contains("cn = \"Jane Doe\""));
+        // Unmodeled properties and components never appear (the header
+        // comment names them, so probe their data lines, not the words).
+        assert!(!toml.contains("keep me verbatim"));
+        assert!(!toml.contains("TRIGGER"));
+        assert!(!toml.contains("DTSTAMP"));
     }
 
     #[test]
     fn blank_project_layout() {
-        let toml = super::project(&Default::default(), VCardVersion::V4_0);
+        let toml = super::project(&Default::default());
 
-        // uid leads, fn follows; categories and lang sit below role;
-        // note is the last bare key; photo precedes url.
-        assert!(toml.find("uid =").unwrap() < toml.find("fn =").unwrap());
-        assert!(toml.find("role =").unwrap() < toml.find("categories =").unwrap());
-        assert!(toml.find("categories =").unwrap() < toml.find("lang =").unwrap());
-        assert!(toml.find("lang =").unwrap() < toml.find("note =").unwrap());
-        assert!(toml.find("[[photo]]").unwrap() < toml.find("[[url]]").unwrap());
+        // summary leads; dtstart before dtend; description is the last
+        // bare key; attendee is a section. uid is app-managed, not shown.
+        assert!(!toml.contains("uid"));
+        assert!(toml.find("summary =").unwrap() < toml.find("dtstart =").unwrap());
+        assert!(toml.find("dtstart =").unwrap() < toml.find("dtend =").unwrap());
+        assert!(toml.find("description =").unwrap() < toml.find("[[attendee]]").unwrap());
 
-        // Empty, uncommented fields; note as an empty literal.
-        assert!(toml.contains("fn = \"\""));
-        assert!(toml.contains("note = ''''''"));
-        assert!(!toml.contains("#fn"));
+        // Empty, uncommented fields; description as an empty literal.
+        assert!(toml.contains("summary = \"\""));
+        assert!(toml.contains("description = ''''''"));
+        assert!(!toml.contains("#summary"));
 
-        // FN is flagged required; hints use the e.g. form.
+        // SUMMARY is flagged required; hints use the e.g. form.
         assert!(toml.contains("# required"));
-        assert!(toml.contains("# e.g. geo:37.78,-122.40"));
-        assert!(toml.contains("# e.g. home work cell"));
-        assert!(toml.contains("# e.g. file:// or http://"));
+        assert!(toml.contains("# e.g. FREQ=WEEKLY"));
+        assert!(toml.contains("for all-day"));
     }
 
     #[test]
     fn blank_bare_hints_share_a_column() {
-        let toml = super::project(&Default::default(), VCardVersion::V4_0);
+        let toml = super::project(&Default::default());
 
         let column = |needle: &str| -> usize {
             let line = toml.lines().find(|line| line.contains(needle)).unwrap();
             line.find('#').unwrap()
         };
 
-        // fn, bday, anniversary, geo, tz all align in the bare block.
-        assert_eq!(column("bday ="), column("fn ="));
-        assert_eq!(column("bday ="), column("anniversary ="));
-        assert_eq!(column("bday ="), column("geo ="));
-        assert_eq!(column("bday ="), column("tz ="));
+        // summary, duration, status, priority all align in the bare block.
+        assert_eq!(column("duration ="), column("summary ="));
+        assert_eq!(column("duration ="), column("status ="));
+        assert_eq!(column("duration ="), column("priority ="));
     }
 
     #[test]
-    fn photo_has_no_type_line() {
-        let toml = super::project(&Default::default(), VCardVersion::V4_0);
-        let photo = toml.split("[[photo]]").nth(1).unwrap();
+    fn apply_roundtrip_preserves_unknown_and_components() {
+        let ical = ical::parse(SAMPLE).unwrap();
+        let toml = super::project(&ical);
 
-        assert!(!photo.lines().take(2).any(|line| line.starts_with("type =")));
-    }
+        let out = super::apply(&ical, &toml).unwrap();
 
-    #[test]
-    fn apply_roundtrip_preserves_unknown_properties() {
-        let card = vcard::parse(SAMPLE).unwrap();
-        let toml = super::project(&card, VCardVersion::V4_0);
-
-        let out = super::apply(&card, &toml, VCardVersion::V4_0).unwrap();
-
-        assert!(out.contains("FN:John Doe"));
-        assert!(out.contains("john@work.example"));
-        assert!(out.contains("john@home.example"));
-        // The unmodeled property survives the round-trip verbatim.
-        assert!(out.contains("X-CUSTOM"));
-        assert!(out.contains("keep me verbatim"));
-    }
-
-    #[test]
-    fn project_then_apply_preserves_bare_fields_after_sections() {
-        // These scalar/list fields are emitted before the sections so
-        // TOML does not nest them inside a table; a round-trip through
-        // the projected scaffold must keep every one of them.
-        let filled = "BEGIN:VCARD\r\n\
-            VERSION:4.0\r\n\
-            FN:Ada Lovelace\r\n\
-            NICKNAME:Ada\r\n\
-            NOTE:Pioneer\r\n\
-            CATEGORIES:science\r\n\
-            UID:urn:uuid:1234\r\n\
-            EMAIL;TYPE=work:ada@analytical.example\r\n\
-            END:VCARD\r\n";
-        let card = vcard::parse(filled).unwrap();
-        let toml = super::project(&card, VCardVersion::V4_0);
-
-        let out = super::apply(&card, &toml, VCardVersion::V4_0).unwrap();
-
-        assert!(out.contains("NICKNAME:Ada"));
-        assert!(out.contains("NOTE:Pioneer"));
-        assert!(out.contains("CATEGORIES:science"));
-        assert!(out.contains("UID:urn:uuid:1234"));
-        assert!(out.contains("ada@analytical.example"));
+        assert!(out.contains("SUMMARY:Team sync"));
+        assert!(out.contains("DTSTART;TZID=America/New_York:20260613T140000"));
+        // calcard folds the long ATTENDEE line; unfold before probing.
+        let unfolded = out.replace("\r\n ", "");
+        assert!(unfolded.contains("mailto:jane@example.com"));
+        // The unmodeled property and the VALARM survive verbatim.
+        assert!(out.contains("X-CUSTOM:keep me verbatim"));
+        assert!(out.contains("BEGIN:VALARM"));
+        assert!(out.contains("TRIGGER:-PT15M"));
+        // Bookkeeping is preserved although it is not modeled.
+        assert!(out.contains("DTSTAMP:20260101T000000Z"));
     }
 
     #[test]
     fn apply_ignores_empty_fields() {
-        let card = vcard::parse(SAMPLE).unwrap();
-        // A whole blank form must drop every modeled field (all empty)
-        // yet keep the unknown property.
-        let blank = super::project(&Default::default(), VCardVersion::V4_0);
+        let ical = ical::parse(SAMPLE).unwrap();
+        // A whole blank form drops every modeled field yet keeps the
+        // unknown property and the sibling component.
+        let blank = super::project(&Default::default());
 
-        let out = super::apply(&card, &blank, VCardVersion::V4_0).unwrap();
+        let out = super::apply(&ical, &blank).unwrap();
 
-        assert!(!out.contains("FN:"));
-        assert!(!out.contains("EMAIL"));
-        assert!(out.contains("X-CUSTOM"));
+        assert!(!out.contains("SUMMARY:"));
+        assert!(!out.contains("DTSTART"));
+        assert!(out.contains("X-CUSTOM:keep me verbatim"));
+        assert!(out.contains("BEGIN:VALARM"));
+    }
+
+    #[test]
+    fn uid_is_hidden_and_app_managed() {
+        let ical = ical::parse(SAMPLE).unwrap();
+
+        // Hidden from the form.
+        let toml = super::project(&ical);
+        assert!(!toml.contains("uid"));
+
+        // Preserved on round-trip, and not overridable from the buffer.
+        let out = super::apply(&ical, "uid = \"hacked\"\n").unwrap();
+        assert!(out.contains("UID:abc@example"));
+        assert!(!out.contains("hacked"));
     }
 
     #[test]
     fn apply_edits_modeled_field() {
-        let card = vcard::parse(SAMPLE).unwrap();
-        let edited = "fn = \"Jane Roe\"\n";
+        let ical = ical::parse(SAMPLE).unwrap();
+        let edited = "summary = \"New title\"\n";
 
-        let out = super::apply(&card, edited, VCardVersion::V4_0).unwrap();
+        let out = super::apply(&ical, edited).unwrap();
 
-        assert!(out.contains("FN:Jane Roe"));
-        assert!(!out.contains("John Doe"));
-        assert!(out.contains("X-CUSTOM"));
+        assert!(out.contains("SUMMARY:New title"));
+        assert!(!out.contains("Team sync"));
+        assert!(out.contains("X-CUSTOM:keep me verbatim"));
+    }
+
+    #[test]
+    fn apply_renders_all_day_and_utc_dates() {
+        let ical = ical::parse(SAMPLE).unwrap();
+
+        let all_day = super::apply(&ical, "dtstart = \"2026-12-25\"\n").unwrap();
+        assert!(all_day.contains("DTSTART;VALUE=DATE:20261225"));
+
+        let utc = super::apply(&ical, "dtstart = \"2026-06-13 14:00 UTC\"\n").unwrap();
+        assert!(utc.contains("DTSTART:20260613T140000Z"));
+
+        let zoned = super::apply(
+            &ical,
+            "dtstart = \"2026-06-13 09:30\"\ndtstart_tz = \"Europe/Paris\"\n",
+        )
+        .unwrap();
+        assert!(zoned.contains("DTSTART;TZID=Europe/Paris:20260613T093000"));
     }
 }

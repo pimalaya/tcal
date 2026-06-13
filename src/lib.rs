@@ -4,5 +4,5 @@
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod error;
+pub mod ical;
 pub mod template;
-pub mod vcard;

@@ -26,12 +26,12 @@ in
 rustPlatform.buildRustPackage {
   inherit cargoHash version buildNoDefaultFeatures;
 
-  pname = "tcard";
+  pname = "tcal";
 
   src = fetchFromGitHub {
     inherit hash;
     owner = "pimalaya";
-    repo = "tcard";
+    repo = "tcal";
     rev = "v${version}";
   };
 
@@ -48,24 +48,24 @@ rustPlatform.buildRustPackage {
     ''
     + ''
       mkdir -p $out/share/{completions,man}
-      ${emulator} "$out"/bin/tcard${exe} manuals "$out"/share/man
-      ${emulator} "$out"/bin/tcard${exe} completions -d "$out"/share/completions bash elvish fish powershell zsh
+      ${emulator} "$out"/bin/tcal${exe} manuals "$out"/share/man
+      ${emulator} "$out"/bin/tcal${exe} completions -d "$out"/share/completions bash elvish fish powershell zsh
     ''
     + lib.optionalString installManPages ''
       installManPage "$out"/share/man/*
     ''
     + lib.optionalString installShellCompletions ''
-      installShellCompletion --cmd tcard \
-        --bash "$out"/share/completions/tcard.bash \
-        --fish "$out"/share/completions/tcard.fish \
-        --zsh "$out"/share/completions/_tcard
+      installShellCompletion --cmd tcal \
+        --bash "$out"/share/completions/tcal.bash \
+        --fish "$out"/share/completions/tcal.fish \
+        --zsh "$out"/share/completions/_tcal
     '';
 
   meta = {
-    description = "CLI and lib to edit vCards as ergonomic TOML, written in Rust";
-    mainProgram = "tcard";
-    homepage = "https://github.com/pimalaya/tcard";
-    changelog = "https://github.com/pimalaya/tcard/blob/master/CHANGELOG.md";
+    description = "CLI and lib to edit calendar events as ergonomic TOML, written in Rust";
+    mainProgram = "tcal";
+    homepage = "https://github.com/pimalaya/tcal";
+    changelog = "https://github.com/pimalaya/tcal/blob/master/CHANGELOG.md";
     license = [
       lib.licenses.mit
       lib.licenses.asl20

@@ -1,16 +1,16 @@
 [package]
-name = "tcard"
-description = "CLI and lib to edit vCards as ergonomic TOML"
+name = "tcal"
+description = "CLI and lib to edit calendar events as ergonomic TOML"
 version = "0.0.1"
 authors = ["soywod <clement.douin@posteo.net>"]
 rust-version = "1.88"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 categories = ["command-line-utilities", "text-processing"]
-keywords = ["vcard", "contact", "toml", "carddav", "editor"]
+keywords = ["icalendar", "calendar", "toml", "caldav", "editor"]
 homepage = "https://pimalaya.org"
-documentation = "https://docs.rs/tcard/latest/tcard"
-repository = "https://github.com/pimalaya/tcard"
+documentation = "https://docs.rs/tcal/latest/tcal"
+repository = "https://github.com/pimalaya/tcal"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["cli"]
-cli = ["dep:anyhow", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
+cli = ["dep:anyhow", "dep:chrono", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
 
 [profile.release]
 lto = "fat"
@@ -27,12 +27,12 @@ strip = "symbols"
 panic = "abort"
 
 [[bin]]
-name = "tcard"
+name = "tcal"
 path = "src/main.rs"
 required-features = ["cli"]
 
 [lib]
-name = "tcard"
+name = "tcal"
 path = "src/lib.rs"
 
 [build-dependencies]
@@ -44,6 +44,7 @@ tempfile = "3"
 [dependencies]
 anyhow = { version = "1", optional = true }
 calcard = "0.3"
+chrono = { version = "0.4", optional = true }
 clap = { version = "4.4", features = ["derive", "env", "wrap_help"], optional = true }
 edit = { version = "0.1", optional = true }
 log = "0.4"

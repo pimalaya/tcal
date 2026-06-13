@@ -1,13 +1,13 @@
-# tcard [![Documentation](https://img.shields.io/docsrs/tcard?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcard/latest/tcard) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
+# tcal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
-CLI and lib to edit [vCards](https://www.rfc-editor.org/rfc/rfc6350) as ergonomic TOML: the TOML vCard, à la [jCard](https://www.rfc-editor.org/rfc/rfc7095).
+CLI and lib to edit calendar events ([iCalendar](https://www.rfc-editor.org/rfc/rfc5545) `VEVENT`) as ergonomic TOML: the TOML calendar, à la [jCal](https://www.rfc-editor.org/rfc/rfc7265).
 
-vCard is already plain text, so there is nothing to compress; what hurts is its crypticness (positional structured values like `N:Doe;John;;;`, opaque `TYPE` params) and the sheer number of properties nobody remembers. tcard projects a vCard into a commented, prefilled TOML scaffold you edit in `$EDITOR`, then folds your edits back onto the original card.
+iCalendar is already plain text, so there is nothing to compress; what hurts is its crypticness (date-times like `20260613T140000`, `;TZID=` parameters, opaque `PARTSTAT`/`ROLE` codes) and the sheer number of properties nobody remembers. tcal projects the `VEVENT` of an iCalendar into a commented, prefilled TOML scaffold you edit in `$EDITOR`, then folds your edits back onto the original calendar. Date-times become a friendly `2026-06-13 14:00` with the time zone on its own line.
 
 This repository ships two layers:
 
-- Low-level **library** projecting between a [calcard](https://crates.io/crates/calcard) `VCard` and TOML: `project` emits the scaffold, `apply` rebuilds modeled fields from the edited buffer while carrying every unmodeled property (custom `X-*`, vendor extensions) over verbatim.
-- High-level **CLI** with two verbs: `template` prints the TOML scaffold (blank or prefilled), `edit` runs the full "project → `$EDITOR` → apply" round-trip and emits the resulting vCard.
+- Low-level **library** projecting between a [calcard](https://crates.io/crates/calcard) `ICalendar` and TOML: `project` emits the scaffold from the first `VEVENT`, `apply` rebuilds modeled fields from the edited buffer while carrying every unmodeled property (the app-managed `UID` and `DTSTAMP`, custom `X-*`) and every sibling component (`VALARM`, `VTIMEZONE`) over verbatim.
+- High-level **CLI** with two verbs: `template` prints the TOML scaffold (blank or prefilled), `edit` runs the full "project to `$EDITOR` to apply" round-trip and emits the resulting iCalendar.
 
 ## Table of contents
 
@@ -28,34 +28,34 @@ This repository ships two layers:
 
 ## Features
 
-- **vCard ↔ TOML projection**, backed by [calcard](https://crates.io/crates/calcard) (RFC 6350 / 6868 parser and writer).
-- **Discoverable form**: every modeled property is listed and empty (an empty value is ignored, like a removed line), prefilled when present, with a comment only where the value is not self-evident. Structured values (`N`, `ADR`) expand into named, ordered components instead of bare semicolons; typed properties (`email`, `tel`, ...) list their accepted `TYPE` values inline; new cards are seeded with a fresh `UID`.
-- **Lossless for unknown properties**: anything tcard does not model (`X-ABLabel`, `item1.*`, vendor extensions) is preserved verbatim through an `edit`. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original card.
-- **Photo as a URI**: `PHOTO` accepts any local file or remote URL; no base64 blobs in your editor.
-- **Two verbs, no subcommand maze**: `template` always emits TOML, `edit` always emits a vCard; `SOURCE` resolves deterministically (`-` is stdin, an existing file is read, otherwise literal vCard contents, and omitting it starts a blank template).
+- **iCalendar event to TOML projection**, backed by [calcard](https://crates.io/crates/calcard) (RFC 5545 parser and writer).
+- **Friendly date-times**: the cryptic `20260613T140000` becomes `2026-06-13 14:00`, all-day events are `2026-06-13`, UTC values end in ` UTC`, and the time zone (`TZID`) moves onto its own `dtstart_tz` key.
+- **Discoverable form**: every modeled property is listed and empty (an empty value is ignored, like a removed line), prefilled when present, with a comment only where the value is not self-evident. Recurrence (`rrule`) and attendees (`role`, `partstat`) carry their accepted values inline; new events are seeded with a fresh `UID` and `DTSTAMP`.
+- **Lossless for everything unmodeled**: properties tcal does not list (the app-managed `UID` and `DTSTAMP`, `SEQUENCE`, custom `X-*`) and sibling components (`VALARM`, `VTIMEZONE`) are preserved verbatim through an `edit`. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original calendar.
+- **Two verbs, no subcommand maze**: `template` always emits TOML, `edit` always emits an iCalendar; `SOURCE` resolves deterministically (`-` is stdin, an existing file is read, otherwise literal iCalendar contents, and omitting it starts a blank template).
 
 > [!TIP]
-> tcard is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate the CLI. The default feature set is declared in [Cargo.toml](./Cargo.toml).
+> tcal is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate the CLI. The default feature set is declared in [Cargo.toml](./Cargo.toml).
 
 ## Installation
 
 ### Pre-built binary
 
-The CLI binary `tcard` can be installed from the latest [GitHub release](https://github.com/pimalaya/tcard/releases) using the install script:
+The CLI binary `tcal` can be installed from the latest [GitHub release](https://github.com/pimalaya/tcal/releases) using the install script:
 
 *As root:*
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/pimalaya/tcard/master/install.sh | sudo sh
+curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | sudo sh
 ```
 
 *As a regular user:*
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/pimalaya/tcard/master/install.sh | PREFIX=~/.local sh
+curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | PREFIX=~/.local sh
 ```
 
-For a more up-to-date version, check out the [pre-releases](https://github.com/pimalaya/tcard/actions/workflows/pre-releases.yml) GitHub workflow: pick the latest run and grab the artifact matching your OS. These are built from the `master` branch.
+For a more up-to-date version, check out the [pre-releases](https://github.com/pimalaya/tcal/actions/workflows/pre-releases.yml) GitHub workflow: pick the latest run and grab the artifact matching your OS. These are built from the `master` branch.
 
 > [!NOTE]
 > Pre-built binaries are built with the default cargo features. If you need a different feature set, use another installation method.
@@ -63,43 +63,43 @@ For a more up-to-date version, check out the [pre-releases](https://github.com/p
 ### Cargo
 
 ```sh
-cargo install tcard --locked --features cli
+cargo install tcal --locked --features cli
 ```
 
 You can also use the git repository for a more up-to-date (but less stable) version:
 
 ```sh
-cargo install --locked --git https://github.com/pimalaya/tcard.git
+cargo install --locked --git https://github.com/pimalaya/tcal.git
 ```
 
-To use `tcard` as a library, add it to your `Cargo.toml`:
+To use `tcal` as a library, add it to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tcard = { version = "0.0.1", default-features = false }
+tcal = { version = "0.0.1", default-features = false }
 ```
 
-Dropping the default `cli` feature gives a slim library build with no clap, no editor integration: just the `project` / `apply` projection over a calcard `VCard`.
+Dropping the default `cli` feature gives a slim library build with no clap, no editor integration: just the `project` / `apply` projection over a calcard `ICalendar`.
 
 ### Nix
 
 If you have the [Flakes](https://nixos.wiki/wiki/Flakes) feature enabled:
 
 ```sh
-nix profile install github:pimalaya/tcard
+nix profile install github:pimalaya/tcal
 ```
 
 Or run without installing:
 
 ```sh
-nix run github:pimalaya/tcard -- template < contact.vcf
+nix run github:pimalaya/tcal -- template < event.ics
 ```
 
 ### Sources
 
 ```sh
-git clone https://github.com/pimalaya/tcard
-cd tcard
+git clone https://github.com/pimalaya/tcal
+cd tcal
 nix run
 ```
 
@@ -107,22 +107,21 @@ nix run
 
 ### Library
 
-Project a vCard to TOML, then fold edits back:
+Project a calendar event to TOML, then fold edits back:
 
 ```rust,ignore
-use calcard::vcard::VCardVersion;
-use tcard::{template, vcard};
+use tcal::{ical, template};
 
-let card = vcard::parse(input)?;
+let calendar = ical::parse(input)?;
 
-// Emit the prefilled, documented scaffold.
-let scaffold = template::project(&card, VCardVersion::V4_0);
+// Emit the prefilled, documented scaffold from the first VEVENT.
+let scaffold = template::project(&calendar);
 
 // ... user edits `scaffold` in an editor ...
 
-// Rebuild modeled fields from the buffer; unknown properties of
-// `card` are preserved verbatim.
-let updated = template::apply(&card, &edited, VCardVersion::V4_0)?;
+// Rebuild modeled fields from the buffer; unknown properties and
+// sibling components of `calendar` are preserved verbatim.
+let updated = template::apply(&calendar, &edited)?;
 ```
 
 ### CLI
@@ -130,49 +129,60 @@ let updated = template::apply(&card, &edited, VCardVersion::V4_0)?;
 Print a blank, fully-documented template:
 
 ```sh
-tcard template
+tcal template
 ```
 
-Project an existing vCard to TOML (path, stdin via `-`, or literal contents):
+Project an existing event to TOML (path, stdin via `-`, or literal contents):
 
 ```sh
-tcard template contact.vcf
-tcard template - < contact.vcf
+tcal template event.ics
+tcal template - < event.ics
 ```
 
-Edit a vCard in `$EDITOR`. With a file source, the result is written back in place; otherwise it goes to stdout (or `--output`):
+Edit an event in `$EDITOR`. With a file source, the result is written back in place; otherwise it goes to stdout (or `--output`):
 
 ```sh
-tcard edit contact.vcf
-tcard edit - < contact.vcf > updated.vcf
-tcard template | $EDITOR /dev/stdin   # inspect the scaffold first
+tcal edit event.ics
+tcal edit - < event.ics > updated.ics
+tcal template | $EDITOR /dev/stdin   # inspect the scaffold first
 ```
 
-Start a new card from scratch and write it out:
+Start a new event from scratch and write it out:
 
 ```sh
-tcard edit --output alice.vcf
-tcard edit --version 3.0 --output bob.vcf
+tcal edit --output meeting.ics
 ```
 
 ## FAQ
 
 <details>
-  <summary>How does `tcard edit` pick the editor?</summary>
+  <summary>Which calendar component does tcal edit?</summary>
 
-  The [edit](https://crates.io/crates/edit) crate resolves `$VISUAL` first, then `$EDITOR`, then an OS default. tcard does not expose a config override: set `VISUAL` / `EDITOR` in your shell rc file.
+  The first `VEVENT` of the iCalendar. Other components (`VTIMEZONE`, `VALARM`, additional events) are kept verbatim but not surfaced in the scaffold. `VTODO`, `VJOURNAL` and friends are out of scope for now.
 </details>
 
 <details>
-  <summary>Why did my card get reformatted on the first edit?</summary>
+  <summary>How do I write dates and times?</summary>
 
-  tcard serializes through calcard, which normalizes line folding and parameter casing (`TYPE=work` becomes `TYPE=WORK`). The first edit of a foreign card reflows it once; output is stable afterwards. Property values and every unmodeled property are preserved verbatim, so no data is lost: only whitespace and casing change.
+  Use `YYYY-MM-DD HH:MM` for a timed event (`2026-06-13 14:00`), `YYYY-MM-DD` alone for an all-day event, and append ` UTC` for a UTC value. For a zoned time, set the adjacent `dtstart_tz` / `dtend_tz` key to an IANA zone like `Europe/Paris`; leave it empty for UTC or floating time. A raw iCalendar value (`20260613T140000`) is accepted too.
 </details>
 
 <details>
-  <summary>What happens to properties tcard does not list?</summary>
+  <summary>How does `tcal edit` pick the editor?</summary>
 
-  They are kept verbatim. The scaffold only surfaces the modeled vocabulary, but `apply` carries every other property (custom `X-*`, Apple `item1.*` groups, vendor extensions) straight from the original card into the result.
+  The [edit](https://crates.io/crates/edit) crate resolves `$VISUAL` first, then `$EDITOR`, then an OS default. tcal does not expose a config override: set `VISUAL` / `EDITOR` in your shell rc file.
+</details>
+
+<details>
+  <summary>Why did my calendar get reformatted on the first edit?</summary>
+
+  tcal serializes through calcard, which normalizes line folding and parameter casing. The first edit of a foreign calendar reflows it once; output is stable afterwards. Property values, every unmodeled property and every sibling component are preserved verbatim, so no data is lost: only whitespace and casing change.
+</details>
+
+<details>
+  <summary>What happens to properties and components tcal does not list?</summary>
+
+  They are kept verbatim. The scaffold only surfaces the modeled `VEVENT` vocabulary, but `apply` carries every other property (`DTSTAMP`, `SEQUENCE`, custom `X-*`) and every sibling component (`VALARM`, `VTIMEZONE`) straight from the original calendar into the result.
 </details>
 
 <details>
@@ -181,7 +191,7 @@ tcard edit --version 3.0 --output bob.vcf
   Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
 
   ```sh
-  tcard --log trace template contact.vcf
+  tcal --log trace template event.ics
   ```
 
   The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [env_logger](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) documentation). `RUST_BACKTRACE=1` enables full error backtraces. Logs are written to `stderr`.
@@ -210,7 +220,7 @@ This project is developed with AI assistance. This section documents how, so use
 
 - **Limitations**: AI models occasionally produce code that compiles and passes tests but is subtly wrong: off-by-one errors, missed edge cases, plausible but nonexistent APIs, stale RFC references. The verification workflow catches most of this; it does not catch all of it. Bug reports are welcome and taken seriously.
 
-- **Last reviewed**: 12/06/2026
+- **Last reviewed**: 13/06/2026
 
 ## Social
 
