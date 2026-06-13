@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Split the oversized `edit` and `template` modules by domain and added a golden-fixture test database.
+
+  `edit` became `edit/{tree,parse,render}.rs`, its standalone node helpers folded into a `Nodes` newtype; the parser into a `Parser` struct (so `edit::parse` is now `edit::tree::Calendar::parse`). `template` split its value layer and model into `template/{line,util,datetime,duration,recurrence,model}.rs`, keeping the projection/apply engine and facade in `template.rs`. Comments were trimmed throughout. New `tests/data/<name>.ics` + `<name>.<mode>.toml` fixtures, checked by `tests/fixtures.rs` (projection equality plus byte-exact round-trip); drop a calendar from a bug report in and generate its expected TOML with `tcal template` to grow the database.
+
 ### Added
 
 - Replaced the `-C`/`--component` option with cumulative per-type flags (`--event`, `--todo`, `--journal`, `--free-busy`, `--timezone`) on both `template` and `edit`.

@@ -1,0 +1,61 @@
+# iCalendar event as TOML, edited by tcal.
+#
+# Fill what you need; empty fields are ignored. Other
+# components and properties tcal does not model are kept
+# verbatim, not shown here.
+
+summary = "Team Standup"
+description = ""
+categories = []
+location = ""
+url = ""					# https://example.com/event
+organizer = ""					# email address
+class = ""					# public, private, confidential
+priority = ""					# 0 = undefined, 1 = highest, 9 = lowest
+status = ""					# confirmed, tentative, cancelled
+transparency = ""				# opaque, transparent
+
+date-start = "2026-01-05 09:30"			# 2026-06-13 14:30
+date-start-tz = "Europe/Paris"			# America/New_York; empty for UTC or floating
+date-end = ""					# 2026-06-13 14:30
+date-end-tz = ""				# America/New_York; empty for UTC or floating
+
+duration.week = ""				# event length
+duration.day = ""
+duration.hour = ""
+duration.min = ""
+duration.sec = ""
+
+recurrence.frequency = "weekly"			# secondly, minutely, hourly, daily, weekly, monthly, yearly
+recurrence.interval = 1				# every N periods
+recurrence.count = ""				# total occurrences; alternative to until
+recurrence.until = "2026-12-31 23:59 UTC"	# 2026-06-13 14:30
+recurrence.by-day = ["mo", "we", "fr"]		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
+recurrence.by-month = []			# 1 to 12
+recurrence.by-month-day = []			# 1 to 31, negative counts from the end (-1 = last)
+recurrence.by-position = []			# nth occurrence in the period; -1 = last
+recurrence.week-start = ""			# mo, tu, we, th, fr, sa, su
+
+[[attendee]]
+display-name = ""
+value = ""					# email address
+role = ""					# chair, req-participant, opt-participant, non-participant
+status = ""					# needs-action, accepted, declined, tentative, delegated
+
+[[alarm]]
+summary = ""		# subject line for an email alarm
+description = ""
+action = ""		# display, email, audio
+repeat = ""		# how many extra times to fire: 2
+
+trigger.week = ""	# before the event
+trigger.day = ""
+trigger.hour = ""
+trigger.min = ""
+trigger.sec = ""
+
+duration.week = ""	# with repeat
+duration.day = ""
+duration.hour = ""
+duration.min = ""
+duration.sec = ""
