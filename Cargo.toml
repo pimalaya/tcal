@@ -1,0 +1,53 @@
+[package]
+name = "tcard"
+description = "CLI and lib to edit vCards as ergonomic TOML"
+version = "0.0.1"
+authors = ["soywod <clement.douin@posteo.net>"]
+rust-version = "1.88"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+categories = ["command-line-utilities", "text-processing"]
+keywords = ["vcard", "contact", "toml", "carddav", "editor"]
+homepage = "https://pimalaya.org"
+documentation = "https://docs.rs/tcard/latest/tcard"
+repository = "https://github.com/pimalaya/tcard"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["cli"]
+cli = ["dep:anyhow", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[[bin]]
+name = "tcard"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[lib]
+name = "tcard"
+path = "src/lib.rs"
+
+[build-dependencies]
+pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+anyhow = { version = "1", optional = true }
+calcard = "0.3"
+clap = { version = "4.4", features = ["derive", "env", "wrap_help"], optional = true }
+edit = { version = "0.1", optional = true }
+log = "0.4"
+pimalaya-cli = { version = "0.0.1", default-features = false, features = ["prompt", "terminal"], optional = true }
+thiserror = "2"
+toml_edit = "0.22"
+uuid = { version = "1", features = ["v4"], optional = true }
