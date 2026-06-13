@@ -924,6 +924,38 @@ mod tests {
     }
 
     #[test]
+    fn timezone_offsets_round_trip() {
+        // calcard stores TZOFFSETFROM/TO as date-times; they must project as
+        // ±HHMM and survive apply, not get dropped (regression: real
+        // VTIMEZONE exports were losing their offsets).
+        let src = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n\
+            BEGIN:STANDARD\r\nDTSTART:19701025T030000\r\nTZOFFSETFROM:+0200\r\n\
+            TZOFFSETTO:+0100\r\nTZNAME:CET\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n";
+        let toml = super::project(&ical::parse(src).unwrap());
+
+        assert!(toml.contains("offset-from = \"+0200\""));
+        assert!(toml.contains("offset-to = \"+0100\""));
+        assert_eq!(super::apply(src, &toml).unwrap(), src);
+    }
+
+    #[test]
+    fn freebusy_periods_round_trip() {
+        // FREEBUSY periods are a Period value type (no borrowed text); they
+        // must project as period strings and survive apply, not vanish
+        // (regression, twin of the time-zone offset bug).
+        let src = "BEGIN:VCALENDAR\r\nBEGIN:VFREEBUSY\r\nUID:fb@x\r\n\
+            DTSTART:19980101T000000Z\r\nDTEND:19980101T060000Z\r\n\
+            FREEBUSY:19980101T010000Z/19980101T020000Z,19980101T030000Z/PT1H\r\n\
+            END:VFREEBUSY\r\nEND:VCALENDAR\r\n";
+        let toml = super::project(&ical::parse(src).unwrap());
+
+        assert!(toml.contains(
+            "periods = [\"19980101T010000Z/19980101T020000Z\", \"19980101T030000Z/PT1H\"]"
+        ));
+        assert_eq!(super::apply(src, &toml).unwrap(), src);
+    }
+
+    #[test]
     fn attendee_display_name_leads() {
         // The display name is the first key of an attendee block, and maps
         // back to the CN parameter on apply.

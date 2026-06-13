@@ -96,6 +96,17 @@ pub fn friendly_date(dt: &PartialDateTime) -> String {
     out
 }
 
+/// Render a calcard UTC-offset (`TZOFFSETFROM`/`TZOFFSETTO`) as `±HHMM`,
+/// mirroring calcard's writer; empty when the offset is absent.
+pub fn offset_text(dt: &PartialDateTime) -> String {
+    let (Some(hour), Some(minute)) = (dt.tz_hour, dt.tz_minute) else {
+        return String::new();
+    };
+    let sign = if dt.tz_minus { '-' } else { '+' };
+
+    format!("{sign}{hour:02}{minute:02}")
+}
+
 /// Render an `RRULE` `UNTIL` value (`20261231T000000Z`) as a friendly
 /// `YYYY-MM-DD [HH:MM[:SS]] [UTC]`, passing it through verbatim when it is
 /// not in the expected digit form.

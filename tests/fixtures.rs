@@ -1,10 +1,16 @@
-//! Golden fixture tests.
+//! Golden fixture tests over real-world and crafted calendars.
 //!
 //! Each `tests/data/<name>.<mode>.toml` is the expected projection of
 //! `tests/data/<name>.ics` for `<mode>` (`all` for the whole calendar, or
 //! `_`-joined component-type keys like `event` or `event_todo`). One `.ics`
 //! can have several expectations. To add a case (e.g. from a bug report),
 //! drop the `.ics` in and generate the `.toml` with `tcal template`.
+//!
+//! Projection is deterministic, so equality is asserted for every fixture.
+//! Round-trip is checked only for fixtures whose source is already in
+//! calcard's canonical form (no `.lossy` marker file): real exports often
+//! reorder `RRULE` tokens or reformat values on read, which apply then
+//! canonicalises, so byte-exact round-trip is not expected there.
 
 use std::{fs, path::Path};
 
@@ -48,8 +54,11 @@ fn fixtures_project_and_round_trip() {
             path.display()
         );
 
-        // The untouched projection folds back onto the source byte-for-byte.
-        let round_trip = tcal::template::apply_with(&ics, &expected, &flags(mode)).unwrap();
-        assert_eq!(round_trip, ics, "round-trip mismatch: {}", path.display());
+        // Untouched, the projection folds back onto the source byte-for-byte,
+        // unless the source is flagged `.lossy` (calcard canonicalises it).
+        if !dir.join(format!("{name}.lossy")).exists() {
+            let round_trip = tcal::template::apply_with(&ics, &expected, &flags(mode)).unwrap();
+            assert_eq!(round_trip, ics, "round-trip mismatch: {}", path.display());
+        }
     }
 }

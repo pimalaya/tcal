@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Projected typed values that have no borrowed text instead of dropping them, found by adding real calendars to the fixture database.
+
+  A time zone's `TZOFFSETFROM`/`TZOFFSETTO` (parsed by calcard as a date-time) showed empty and was stripped on save; a new `Kind::Offset` reads the hour/minute/sign and renders `±HHMM`. `VFREEBUSY` periods (a `Period` value type) were likewise lost; `List` now reads each value's owned text form, so `periods` project and round-trip. A calendar address's `mailto:` scheme is now stripped case-insensitively (real exports use `Mailto:`).
+
 ### Changed
 
 - Split the oversized `edit` and `template` modules by domain and added a golden-fixture test database.
 
-  `edit` became `edit/{tree,parse,render}.rs`, its standalone node helpers folded into a `Nodes` newtype; the parser into a `Parser` struct (so `edit::parse` is now `edit::tree::Calendar::parse`). `template` split its value layer and model into `template/{line,util,datetime,duration,recurrence,model}.rs`, keeping the projection/apply engine and facade in `template.rs`. Comments were trimmed throughout. New `tests/data/<name>.ics` + `<name>.<mode>.toml` fixtures, checked by `tests/fixtures.rs` (projection equality plus byte-exact round-trip); drop a calendar from a bug report in and generate its expected TOML with `tcal template` to grow the database.
+  `edit` became `edit/{tree,parse,render}.rs`, its standalone node helpers folded into a `Nodes` newtype; the parser into a `Parser` struct (so `edit::parse` is now `edit::tree::Calendar::parse`). `template` split its value layer and model into `template/{line,util,datetime,duration,recurrence,model}.rs`, keeping the projection/apply engine and facade in `template.rs`. Comments were trimmed throughout. New `tests/data/<name>.ics` + `<name>.<mode>.toml` fixtures (crafted plus real-world exports from ical.js, python-icalendar and libical), checked by `tests/fixtures.rs`: projection equality always, plus byte-exact round-trip unless a `<name>.lossy` marker says the source is not in calcard's canonical form (reordered `RRULE` tokens, all-day dates without `VALUE=DATE`, attendee parameters tcal does not model, ...). Drop a calendar from a bug report in and generate its expected TOML with `tcal template` to grow the database.
 
 ### Added
 

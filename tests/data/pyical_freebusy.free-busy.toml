@@ -1,0 +1,20 @@
+# iCalendar free-busy as TOML, edited by tcal.
+#
+# Fill what you need; empty fields are ignored. Other
+# components and properties tcal does not model are kept
+# verbatim, not shown here.
+
+organizer = ""										# email address
+periods = ["20250101T100000Z/20250101T120000Z", "20250101T140000Z/20250101T160000Z"]	# 20260613T140000Z/PT1H
+url = ""
+
+date-start = "2025-01-01 00:00 UTC"							# 2026-06-13 14:30
+date-start-tz = ""									# America/New_York; empty for UTC or floating
+date-end = "2025-01-02 00:00 UTC"							# 2026-06-13 14:30
+date-end-tz = ""									# America/New_York; empty for UTC or floating
+
+[[attendee]]
+display-name = ""
+value = ""										# email address
+role = ""										# chair, req-participant, opt-participant, non-participant
+status = ""										# needs-action, accepted, declined, tentative, delegated

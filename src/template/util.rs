@@ -1,7 +1,7 @@
 //! Small value helpers shared across projection and apply: TOML rendering,
 //! iCalendar text escaping, and reading calcard entry values.
 
-use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
+use calcard::icalendar::{ICalendarEntry, ICalendarParameterName, ICalendarValue};
 use toml_edit::{Array, Item, TableLike, Value};
 
 /// Render a string as a quoted, escaped TOML scalar.
@@ -127,6 +127,15 @@ pub fn entry_text(entry: &ICalendarEntry) -> Option<&str> {
     entry.values.first().and_then(|value| value.as_text())
 }
 
+/// A value as text, falling back to its owned form for typed values
+/// (durations, periods, ...) that have no borrowed text.
+pub fn value_text(value: &ICalendarValue) -> Option<String> {
+    value
+        .as_text()
+        .map(str::to_owned)
+        .or_else(|| value.clone().into_text().map(|text| text.into_owned()))
+}
+
 /// First value of a named parameter as owned text.
 pub fn param(entry: &ICalendarEntry, name: &ICalendarParameterName) -> Option<String> {
     entry
@@ -136,12 +145,12 @@ pub fn param(entry: &ICalendarEntry, name: &ICalendarParameterName) -> Option<St
         .map(str::to_owned)
 }
 
-/// A calendar address without its `mailto:` scheme, for display.
+/// A calendar address without its `mailto:` scheme (any case), for display.
 pub fn strip_mailto(value: &str) -> &str {
-    value
-        .strip_prefix("mailto:")
-        .or_else(|| value.strip_prefix("MAILTO:"))
-        .unwrap_or(value)
+    match value.get(..7) {
+        Some(scheme) if scheme.eq_ignore_ascii_case("mailto:") => &value[7..],
+        _ => value,
+    }
 }
 
 /// A calendar address with a scheme: a bare address gains `mailto:`.

@@ -5,13 +5,13 @@ use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{DATE_HINT, date_line, friendly_date},
+    datetime::{DATE_HINT, date_line, friendly_date, offset_text},
     duration::{duration_lines, duration_value},
     line::Line,
     recurrence::{recur_lines, recur_rule},
     util::{
         ensure_mailto, entry_text, escape, push_param, scalar_text, strip_mailto, tables,
-        toml_array, toml_number, toml_str,
+        toml_array, toml_number, toml_str, value_text,
     },
 };
 
@@ -35,6 +35,9 @@ pub(crate) enum Kind {
 
     /// Calendar address, projected without its `mailto:` scheme.
     CalAddress,
+
+    /// UTC offset (`TZOFFSETFROM`/`TZOFFSETTO`), projected as `±HHMM`.
+    Offset,
 
     /// Repeatable attendee with `CN` / `ROLE` / `PARTSTAT` parameters.
     Attendee,
@@ -420,13 +423,13 @@ const TZRULE_FIELDS: &[Field] = &[
         key: "offset-from",
         name: "TZOFFSETFROM",
         hint: Some("+0200"),
-        kind: Kind::Scalar { escape: false },
+        kind: Kind::Offset,
     },
     Field {
         key: "offset-to",
         name: "TZOFFSETTO",
         hint: Some("+0100"),
-        kind: Kind::Scalar { escape: false },
+        kind: Kind::Offset,
     },
     Field {
         key: "date-start",
@@ -553,12 +556,7 @@ impl Field {
             Kind::List { .. } => {
                 let items: Vec<String> = entries
                     .iter()
-                    .flat_map(|entry| {
-                        entry
-                            .values
-                            .iter()
-                            .filter_map(|value| value.as_text().map(str::to_owned))
-                    })
+                    .flat_map(|entry| entry.values.iter().filter_map(value_text))
                     .collect();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_array(&items)),
@@ -598,6 +596,19 @@ impl Field {
                     .unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(value)),
+                    hint: self.hint.map(str::to_owned),
+                }]
+            }
+
+            Kind::Offset => {
+                let value = entries
+                    .first()
+                    .and_then(|entry| entry.values.first())
+                    .and_then(|value| value.as_partial_date_time())
+                    .map(offset_text)
+                    .unwrap_or_default();
+                vec![Line {
+                    lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
                 }]
             }
@@ -685,6 +696,12 @@ impl Field {
             Kind::CalAddress => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
                     lines.push(format!("{}:{}", self.name, ensure_mailto(value)));
+                }
+            }
+
+            Kind::Offset => {
+                if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
+                    lines.push(format!("{}:{}", self.name, value));
                 }
             }
 
