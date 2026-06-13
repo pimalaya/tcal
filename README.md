@@ -1,11 +1,6 @@
 # tcal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
-CLI & lib to edit ([iCalendar](https://www.rfc-editor.org/rfc/rfc5545)) as ergonomic TOML.
-
-This repository ships two interfaces:
-
-- Rust **library** to generate iCalendar from/to TOML projection
-- **CLI** to print and/or edit TOML template using `$EDITOR`
+CLI & lib to edit [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML.
 
 ```sh
 $ tcal edit --event
@@ -57,6 +52,11 @@ END:VEVENT
 END:VCALENDAR
 ```
 
+This repository ships two interfaces:
+
+- Rust **library** to generate iCalendar from/to TOML projection
+- **CLI** to print and/or edit TOML template using `$EDITOR`
+
 ## Table of contents
 
 - [Features](#features)
@@ -72,7 +72,6 @@ END:VCALENDAR
 - [License](#license)
 - [AI disclosure](#ai-disclosure)
 - [Contributing](CONTRIBUTING.md)
-- [Architecture](ARCHITECTURE.md)
 - [Social](#social)
 - [Sponsoring](#sponsoring)
 

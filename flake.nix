@@ -1,5 +1,5 @@
 {
-  description = "CLI & lib to edit iCalendar as ergonomic TOML, written in Rust";
+  description = "CLI & lib to edit iCalendars as ergonomic TOML, written in Rust";
 
   inputs = {
     nixpkgs = {
