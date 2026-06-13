@@ -57,7 +57,7 @@ rustPlatform.buildRustPackage {
     '';
 
   meta = {
-    description = "CLI and lib to edit calendar components as ergonomic TOML, written in Rust";
+    description = "CLI & lib to edit iCalendar as ergonomic TOML, written in Rust";
     mainProgram = "tcal";
     homepage = "https://github.com/pimalaya/tcal";
     changelog = "https://github.com/pimalaya/tcal/blob/master/CHANGELOG.md";

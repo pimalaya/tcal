@@ -1,6 +1,6 @@
 [package]
 name = "tcal"
-description = "CLI and lib to edit calendar components as ergonomic TOML"
+description = "CLI & lib to edit iCalendar as ergonomic TOML"
 version = "0.0.1"
 authors = ["soywod <clement.douin@posteo.net>"]
 edition = "2024"

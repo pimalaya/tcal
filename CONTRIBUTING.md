@@ -2,104 +2,53 @@
 
 Thank you for investing your time in contributing to tcal.
 
-This guide doubles as a deep description of the project: it is written for human contributors *and* for AI assistants, so either can understand the architecture and conventions before changing anything. Read the [Architecture](#architecture) and [Conventions](#conventions) sections before sending a patch.
+Whether you are a human or an AI agent, read these in order before touching the code:
+
+1. the [Pimalaya README](https://github.com/pimalaya) for what the project is and how its repositories stack;
+2. the [Pimalaya ARCHITECTURE](https://github.com/pimalaya/.github/blob/master/ARCHITECTURE.md) for the conventions every repository shares (layering, `no_std`, modules, errors, code style, licensing, notes for AI agents);
+3. this guide, for how to build, test and submit changes here;
+4. the repo [ARCHITECTURE](./ARCHITECTURE.md) for how tcal in particular is designed.
+
+This document stays operational; the design lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ## Development environment
 
-The environment is managed by [Nix](https://nixos.org/download.html). `nix develop` spawns a shell with the right toolchain; every cargo invocation below assumes it (or run them directly as `nix develop --command cargo ...`).
+The environment is managed by [Nix](https://nixos.org/download.html). `nix develop` spawns a shell with the right toolchain; every cargo command below assumes it (or prefix them with `nix develop --command`).
 
 Without Nix, install a recent stable toolchain via [rustup](https://rust-lang.github.io/rustup/) (`rustup update`); the crate needs Rust matching the `rust-version` in [Cargo.toml](./Cargo.toml).
 
-## Build and feature layers
+## Build
 
-tcal is a `#![no_std]` library (plus `alloc`) with an optional CLI on top. There is exactly one feature:
-
-- **no features** (`cargo build`): the `no_std` core that fully deals with TOML and iCalendar in both directions (`ical`, `template`, `edit`, `error`). No `std`, no clap, no editor.
-- **`cli`** (`cargo build --features cli`): pulls in `std` and the binary, with the `template` and `edit` commands and the `$EDITOR` integration. `cli` is *not* a default feature.
-
-Three configurations are expected to stay green; check them when touching feature gates or imports:
+tcal is a `#![no_std]` library with an optional CLI behind a single `cli` feature (not enabled by default):
 
 ```sh
-cargo build                      # no_std core
-cargo build --features cli       # full CLI
+cargo build                      # no_std core library
+cargo build --features cli       # library + binary (pulls in std)
 cargo build --release --features cli
 ```
+
+When touching feature gates or imports, check both the core and the CLI build, so no `std`-only code leaks into the `no_std` core.
 
 ## Lint, test, audit
 
 ```sh
-cargo test                       # unit + integration tests (no_std core)
+cargo test                       # unit + integration + doc tests
 cargo test --features cli        # also exercises the CLI-only code paths
-cargo clippy --all-targets       # and again with --no-default-features
-cargo fmt                        # rustfmt; CI checks `cargo fmt --check`
+cargo clippy --all-targets       # keep clean for core and --features cli
+cargo fmt                        # CI checks `cargo fmt --check`
 ```
 
-Tests come in three kinds:
+Before opening a PR, make sure `cargo test`, `cargo clippy` and `cargo fmt --check` pass.
 
-- **Unit tests** (`#[cfg(test)] mod tests`) in `template.rs` and `edit/tree.rs`, pinning the projection, apply and minimal-diff guarantees on crafted inputs. Because the crate is `no_std`, each test module imports what it needs from `alloc`.
-- **Golden fixtures** in `tests/fixtures.rs` over `tests/data/`: each `<name>.<mode>.toml` is the expected projection of `<name>.ics` for `<mode>` (`all`, or `_`-joined type keys like `event` or `event_todo`). The runner asserts `project_with == toml` for every fixture, plus a byte-exact round-trip (`apply_with` reproduces the source) unless a `<name>.lossy` marker says the source is not in calcard's canonical form.
-- **Doctest**: the library example in [README.md](./README.md) is compiled and run.
+### Adding a fixture
 
-To add a fixture (e.g. from a bug report), drop `tests/data/<name>.ics` in and generate the expectation: `cargo run --features cli -- template [--flags] tests/data/<name>.ics -o tests/data/<name>.<mode>.toml`. Add an empty `tests/data/<name>.lossy` if the source will not round-trip byte-for-byte (see [Known limitations](#known-limitations)). Real-world calendars belong here; prefer them over synthetic ones.
+`tests/data/` is a golden database of calendars (see [ARCHITECTURE.md](./ARCHITECTURE.md#the-golden-fixture-database)); adding a real-world calendar is the fastest way to turn a bug report into a regression test:
 
-## Project layout
-
-```
-src/
-  lib.rs                 no_std setup, module + feature wiring
-  error.rs               TcalError + Result
-  ical.rs                calcard parse adapter (text -> ICalendar)
-  cli.rs                 [cli] binary: Cli/Command, template & edit verbs
-  template.rs            projection/apply engine + facade + unit tests
-  template/
-    model.rs             Kind, Field, Spec, the static field tables, TOP_LEVEL
-    line.rs              Line + tab-aligned comment emission
-    util.rs              TOML/escape/calcard-value helpers
-    datetime.rs          friendly date-times <-> iCalendar digits, offsets
-    duration.rs          DURATION/TRIGGER <-> dotted duration.* keys
-    recurrence.rs        RRULE <-> dotted recurrence.* keys
-  edit.rs                module root for the format-preserving editor
-  edit/
-    tree.rs              Calendar/Component/Property/Container + Nodes DOM
-    parse.rs             Parser: unfold + build the tree
-    render.rs            fold content lines, detect end-of-line
-tests/
-  fixtures.rs            golden-fixture runner
-  data/                  *.ics sources + *.toml expectations + *.lossy markers
-```
-
-## Architecture
-
-tcal converts between a calcard `ICalendar` and an ergonomic TOML buffer, in two directions:
-
-- **`project` / `project_with`** (read): turn an `ICalendar` into a fillable TOML scaffold. calcard is the reader; it validates and normalises values.
-- **`apply` / `apply_with`** (write): fold an edited TOML buffer back onto the *original* iCalendar text.
-
-The crucial design choice: **calcard is reader-only**. Its writer normalises folding, parameter casing and property order, so re-serialising churns the whole file. Instead `apply` patches the original text through `crate::edit`, a format-preserving editor (the `toml_edit` analog for iCalendar) that keeps every content line's original bytes and re-renders only the lines a modeled field actually changed. Its core invariant is `Calendar::parse(s).to_string() == s` for any input; on top of it, projecting then applying an untouched buffer reproduces the source byte-for-byte.
-
-The modeled vocabulary lives in `template/model.rs`. A `Spec { key, name, fields, children }` describes one component type (`TOP_LEVEL` = event, todo, journal, free-busy, timezone; children are alarms and time-zone rules). Each `Field { key, name, hint, kind }` decouples the TOML `key` (friendly, e.g. `date-start`) from the iCalendar `name` (`DTSTART`). The `Kind` enum drives both directions per field: `Scalar`, `Enum` (lowercase in hints, uppercased on export), `Number`, `List`, `Date` (friendly value plus an adjacent `<key>-tz`), `CalAddress` (strips `mailto:`), `Offset` (`±HHMM`), `Attendee` (a `[[...]]` section with `display-name`/`value`/`role`/`status`), `Recur` and `Duration` (inline dotted `recurrence.*` / `duration.*` keys, each with a raw escape hatch).
-
-Filtering (`project_with` / `apply_with` with selected type keys): no types selected projects the whole calendar; one type flattens at the document root; two or more keep the `VCALENDAR` root and show only those. Crucially, `apply` only reconciles the selected types, so a filtered edit never drops the unselected ones. `UID` and `DTSTAMP` are app-managed: not modeled, seeded for new events, preserved otherwise.
-
-## Conventions
-
-These are repo rules; follow them in new code.
-
-- **`no_std`**: `#![no_std]` is unconditional, `extern crate std;` is gated on `feature = "cli"`. Every module imports the `alloc` items and macros it uses (`format`, `vec`, `String`, `ToString`, `Vec`, `ToOwned`); the `core`/`alloc` prelude does not include them. Import order: `core`, blank, `alloc` + `std`, blank, third-party, blank, `crate`. Use `crate::` paths, not `super::`.
-- **No re-exports**: callers use module-qualified paths (`tcal::edit::tree::Calendar`); module roots only declare submodules, no `pub use`.
-- **Structs over free functions** where there is a real receiver (see `Nodes`, `Parser`); keep genuinely stateless helpers as small free functions grouped by domain.
-- **Comments**: every public module, function and type has a one-line doc; prose stays concise. Avoid bare inline `//` comments; when one is needed, tag it (`NOTE`, `HACK`, `SAFETY`). No em dashes; do not hard-wrap markdown.
-- **Tests pin behaviour**: never adjust a test to fit the code; adjust the code to match correct, RFC-checked behaviour. Verify against RFC 5545, not model output.
-- After any Rust change, run `cargo fmt` and keep `cargo clippy` clean for both the core and the CLI.
-
-## Known limitations
-
-These are deliberate (or pending) and explain the `.lossy` fixture markers:
-
-- **RRULE canonicalisation**: calcard reorders `RRULE` tokens on read (canonical order: `FREQ, UNTIL, COUNT, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, BYSETPOS, WKST`), so a source rule in another order round-trips canonicalised, not byte-exact.
-- **All-day `VALUE=DATE`**: an all-day date written without the parameter (`DTSTART:20220101`) is re-emitted RFC-correct (`DTSTART;VALUE=DATE:20220101`).
-- **Attendee parameters**: only `CN`/`ROLE`/`PARTSTAT` are modeled; other parameters (`RSVP`, `CUTYPE`, ...) are dropped when an attendee line is rewritten.
-- **List parameters**: `CATEGORIES`/`FREEBUSY` parameters (e.g. `FBTYPE`) are not modeled.
+1. drop the calendar in as `tests/data/<name>.ics`;
+2. generate the expectation: `cargo run --features cli -- template [--flags] tests/data/<name>.ics -o tests/data/<name>.<mode>.toml` (where `<mode>` is `all`, or `_`-joined type keys like `event`);
+3. eyeball the generated `.toml`; if anything looks wrong, you have found a bug, fix the code rather than the fixture;
+4. if the source will not round-trip byte-for-byte (see the limitations in ARCHITECTURE), add an empty `tests/data/<name>.lossy` marker;
+5. run `cargo test`.
 
 ## Commit style
 
