@@ -31,7 +31,7 @@ This repository ships two layers:
 - **iCalendar event to TOML projection**, backed by [calcard](https://crates.io/crates/calcard) (RFC 5545 parser and writer).
 - **Friendly date-times**: the cryptic `20260613T140000` becomes `2026-06-13 14:00`, all-day events are `2026-06-13`, UTC values end in ` UTC`, and the time zone (`TZID`) moves onto its own `dtstart_tz` key.
 - **Discoverable form**: every modeled property is listed and empty (an empty value is ignored, like a removed line), prefilled when present, with a comment only where the value is not self-evident. Recurrence (`rrule`) and attendees (`role`, `partstat`) carry their accepted values inline; new events are seeded with a fresh `UID` and `DTSTAMP`.
-- **Lossless for everything unmodeled**: properties tcal does not list (the app-managed `UID` and `DTSTAMP`, `SEQUENCE`, custom `X-*`) and sibling components (`VALARM`, `VTIMEZONE`) are preserved verbatim through an `edit`. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original calendar.
+- **Minimal diff, lossless for everything unmodeled**: `apply` patches the original text through a format-preserving editor, re-rendering only the lines you changed. Properties tcal does not list (the app-managed `UID` and `DTSTAMP`, `SEQUENCE`, custom `X-*`), sibling components (`VALARM`, `VTIMEZONE`), folding, casing and ordering are all kept byte-for-byte. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original calendar.
 - **Two verbs, no subcommand maze**: `template` always emits TOML, `edit` always emits an iCalendar; `SOURCE` resolves deterministically (`-` is stdin, an existing file is read, otherwise literal iCalendar contents, and omitting it starts a blank template).
 
 > [!TIP]
@@ -119,9 +119,9 @@ let scaffold = template::project(&calendar);
 
 // ... user edits `scaffold` in an editor ...
 
-// Rebuild modeled fields from the buffer; unknown properties and
-// sibling components of `calendar` are preserved verbatim.
-let updated = template::apply(&calendar, &edited)?;
+// Fold the edits back onto the original text: only changed lines are
+// re-rendered, everything else stays byte-for-byte identical.
+let updated = template::apply(input, &edited)?;
 ```
 
 ### CLI
@@ -174,9 +174,9 @@ tcal edit --output meeting.ics
 </details>
 
 <details>
-  <summary>Why did my calendar get reformatted on the first edit?</summary>
+  <summary>Will tcal reformat my whole calendar on edit?</summary>
 
-  tcal serializes through calcard, which normalizes line folding and parameter casing. The first edit of a foreign calendar reflows it once; output is stable afterwards. Property values, every unmodeled property and every sibling component are preserved verbatim, so no data is lost: only whitespace and casing change.
+  No. `apply` patches the original text through a format-preserving editor (the iCalendar analog of toml_edit): only the lines of modeled fields you actually changed are re-rendered, so the diff is minimal. Folding, parameter casing, property order and line endings of every untouched line are kept byte-for-byte.
 </details>
 
 <details>

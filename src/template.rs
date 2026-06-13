@@ -6,19 +6,19 @@
 //! empty value means the same as a removed line, so nothing is commented
 //! out). Cryptic date-times (`20260613T140000`) become a friendly
 //! `2026-06-13 14:00`, and the time zone is broken out onto its own key.
-//! [`apply`] takes the original iCalendar plus the edited buffer and
-//! produces an updated iCalendar, rebuilding the modeled `VEVENT`
-//! properties from TOML while carrying every unmodeled property
-//! (custom `X-*`, ...) and every other component (`VALARM`,
-//! `VTIMEZONE`, ...) verbatim.
+//! [`apply`] takes the original iCalendar text plus the edited buffer and
+//! produces an updated iCalendar, patching only the modeled `VEVENT`
+//! lines the user changed (through the format-preserving [`crate::edit`])
+//! while keeping every unmodeled property (custom `X-*`, ...) and every
+//! other component (`VALARM`, `VTIMEZONE`, ...) byte-for-byte.
 //!
 //! `UID` and `DTSTAMP` are intentionally not modeled: they are managed
 //! by the app (seeded for new events, preserved otherwise) and cannot be
 //! set through the buffer.
 //!
 //! The buffer is an editing affordance, not an interchange format:
-//! `apply` always needs the original iCalendar, because that is where
-//! unmodeled properties and sibling components live.
+//! `apply` always needs the original iCalendar text, because that is
+//! where unmodeled properties and sibling components live.
 //!
 //! NOTE: TOML attributes every bare key after a `[table]` / `[[array]]`
 //! header to that table, so [`FIELDS`] lists all scalar/list keys first
@@ -28,10 +28,7 @@ use std::fmt::Write as _;
 
 use calcard::{
     common::PartialDateTime,
-    icalendar::{
-        ICalendar, ICalendarComponentType, ICalendarEntry, ICalendarParameterName,
-        ICalendarProperty,
-    },
+    icalendar::{ICalendar, ICalendarComponentType, ICalendarEntry, ICalendarParameterName},
 };
 use toml_edit::{DocumentMut, Item, TableLike};
 
@@ -95,57 +92,24 @@ pub fn project(ical: &ICalendar) -> String {
     out
 }
 
-/// Apply an edited TOML buffer onto the original iCalendar.
+/// Apply an edited TOML buffer onto the original iCalendar text.
 ///
-/// The first `VEVENT`'s modeled fields are rebuilt from the buffer; its
-/// unmodeled properties (including the app-managed `UID` and `DTSTAMP`)
-/// and every sibling component are preserved verbatim. The result is
-/// serialized by calcard, so output is normalized (line folding,
-/// parameter casing) but lossless for unknown properties.
-pub fn apply(original: &ICalendar, edited_toml: &str) -> Result<String> {
+/// The first `VEVENT`'s modeled fields are rewritten from the buffer
+/// through a format-preserving editor (see [`crate::edit`]): only the
+/// lines that actually changed are re-rendered, so unmodeled properties
+/// (including the app-managed `UID` and `DTSTAMP`), sibling components,
+/// folding, ordering and casing are all kept verbatim.
+pub fn apply(original_src: &str, edited_toml: &str) -> Result<String> {
     let doc: DocumentMut = edited_toml.parse().map_err(TcalError::ParseToml)?;
 
-    // Emit the modeled lines into a throwaway VEVENT, then let calcard
-    // parse them back into entries (with their parameters and typed
-    // values) rather than hand-building them.
-    let mut assembled = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n");
+    let mut cal = crate::edit::parse(original_src);
+    let event = cal.component_mut("VEVENT").ok_or(TcalError::NoEvent)?;
+
     for field in FIELDS {
-        field.emit(&doc, &mut assembled);
+        event.set_all(field.name, &field.content_lines(&doc));
     }
-    assembled.push_str("END:VEVENT\r\nEND:VCALENDAR\r\n");
 
-    let rebuilt = crate::ical::parse(&assembled)?;
-    let modeled: Vec<ICalendarEntry> = rebuilt
-        .components
-        .iter()
-        .find(|component| component.component_type == ICalendarComponentType::VEvent)
-        .map(|event| {
-            event
-                .entries
-                .iter()
-                .filter(|entry| is_modeled(&entry.name))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let mut out = original.clone();
-    let event = out
-        .components
-        .iter_mut()
-        .find(|component| component.component_type == ICalendarComponentType::VEvent)
-        .ok_or(TcalError::NoEvent)?;
-
-    let preserved: Vec<ICalendarEntry> = event
-        .entries
-        .iter()
-        .filter(|entry| is_data(&entry.name) && !is_modeled(&entry.name))
-        .cloned()
-        .collect();
-
-    event.entries = modeled.into_iter().chain(preserved).collect();
-
-    Ok(out.to_string())
+    Ok(cal.to_string())
 }
 
 /// A projected line: a left side and an optional inline hint.
@@ -398,12 +362,16 @@ impl Field {
         }
     }
 
-    /// Emit this field's iCalendar content line(s) from the edited `doc`
-    /// into `out`, skipping empty values.
-    fn emit(&self, doc: &DocumentMut, out: &mut String) {
+    /// This field's iCalendar content line(s) built from the edited
+    /// `doc`, without an end of line, skipping empty values. Empty when
+    /// the field is absent or blank, so [`crate::edit::Component::set_all`]
+    /// removes it.
+    fn content_lines(&self, doc: &DocumentMut) -> Vec<String> {
         let Some(item) = doc.get(self.key) else {
-            return;
+            return Vec::new();
         };
+
+        let mut lines = Vec::new();
 
         match &self.kind {
             Kind::Scalar {
@@ -415,7 +383,7 @@ impl Field {
                     } else {
                         value.to_owned()
                     };
-                    push_line(out, &format!("{}:{}", self.name, value));
+                    lines.push(format!("{}:{}", self.name, value));
                 }
             }
 
@@ -424,45 +392,39 @@ impl Field {
                 if let Some(value) = item.as_str() {
                     let value = value.strip_suffix('\n').unwrap_or(value);
                     if !value.is_empty() {
-                        push_line(out, &format!("{}:{}", self.name, escape(value)));
+                        lines.push(format!("{}:{}", self.name, escape(value)));
                     }
                 }
             }
 
             Kind::List { sep } => {
-                let Some(array) = item.as_array() else {
-                    return;
-                };
+                if let Some(array) = item.as_array() {
+                    let parts: Vec<String> = array
+                        .iter()
+                        .filter_map(|value| value.as_str())
+                        .filter(|value| !value.is_empty())
+                        .map(escape)
+                        .collect();
 
-                let parts: Vec<String> = array
-                    .iter()
-                    .filter_map(|value| value.as_str())
-                    .filter(|value| !value.is_empty())
-                    .map(escape)
-                    .collect();
-
-                if !parts.is_empty() {
-                    push_line(
-                        out,
-                        &format!("{}:{}", self.name, parts.join(&sep.to_string())),
-                    );
+                    if !parts.is_empty() {
+                        lines.push(format!("{}:{}", self.name, parts.join(&sep.to_string())));
+                    }
                 }
             }
 
             Kind::Date => {
-                let Some(value) = item.as_str().filter(|value| !value.is_empty()) else {
-                    return;
-                };
-                let tz = doc
-                    .get(&format!("{}_tz", self.key))
-                    .and_then(|item| item.as_str())
-                    .filter(|value| !value.is_empty());
-                push_line(out, &date_line(self.name, value, tz));
+                if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
+                    let tz = doc
+                        .get(&format!("{}_tz", self.key))
+                        .and_then(|item| item.as_str())
+                        .filter(|value| !value.is_empty());
+                    lines.push(date_line(self.name, value, tz));
+                }
             }
 
             Kind::CalAddress => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    push_line(out, &format!("{}:{}", self.name, ensure_mailto(value)));
+                    lines.push(format!("{}:{}", self.name, ensure_mailto(value)));
                 }
             }
 
@@ -482,10 +444,12 @@ impl Field {
                     push_param(&mut line, "PARTSTAT", table.get("partstat"));
                     line.push(':');
                     line.push_str(&ensure_mailto(value));
-                    push_line(out, &line);
+                    lines.push(line);
                 }
             }
         }
+
+        lines
     }
 }
 
@@ -703,12 +667,6 @@ fn push_param(line: &mut String, name: &str, item: Option<&Item>) {
     }
 }
 
-/// Push an iCalendar content line with CRLF, as the spec mandates.
-fn push_line(out: &mut String, line: &str) {
-    out.push_str(line);
-    out.push_str("\r\n");
-}
-
 /// Collect the TOML tables addressed by an array-of-tables (`[[key]]`)
 /// or an inline array of inline tables.
 fn tables(item: &Item) -> Vec<&dyn TableLike> {
@@ -770,20 +728,6 @@ fn ensure_mailto(value: &str) -> String {
     } else {
         format!("mailto:{value}")
     }
-}
-
-/// True unless the property is a structural marker calcard emits on its
-/// own (`BEGIN`, `END`, `VERSION`).
-fn is_data(name: &ICalendarProperty) -> bool {
-    !matches!(
-        name,
-        ICalendarProperty::Begin | ICalendarProperty::End | ICalendarProperty::Version
-    )
-}
-
-/// True when the property is part of the modeled vocabulary.
-fn is_modeled(name: &ICalendarProperty) -> bool {
-    FIELDS.iter().any(|field| field.name == name.as_str())
 }
 
 /// Render a string as a quoted, escaped TOML scalar.
@@ -904,13 +848,11 @@ mod tests {
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project(&ical);
 
-        let out = super::apply(&ical, &toml).unwrap();
+        let out = super::apply(SAMPLE, &toml).unwrap();
 
         assert!(out.contains("SUMMARY:Team sync"));
         assert!(out.contains("DTSTART;TZID=America/New_York:20260613T140000"));
-        // calcard folds the long ATTENDEE line; unfold before probing.
-        let unfolded = out.replace("\r\n ", "");
-        assert!(unfolded.contains("mailto:jane@example.com"));
+        assert!(out.contains("mailto:jane@example.com"));
         // The unmodeled property and the VALARM survive verbatim.
         assert!(out.contains("X-CUSTOM:keep me verbatim"));
         assert!(out.contains("BEGIN:VALARM"));
@@ -920,13 +862,35 @@ mod tests {
     }
 
     #[test]
-    fn apply_ignores_empty_fields() {
+    fn apply_projection_is_a_no_op() {
+        // Projecting then applying an untouched buffer must reproduce the
+        // source byte-for-byte: the minimal-diff guarantee at its limit.
         let ical = ical::parse(SAMPLE).unwrap();
+        let toml = super::project(&ical);
+
+        assert_eq!(super::apply(SAMPLE, &toml).unwrap(), SAMPLE);
+    }
+
+    #[test]
+    fn apply_changes_only_the_edited_line() {
+        let ical = ical::parse(SAMPLE).unwrap();
+        let toml = super::project(&ical).replace("Team sync", "Team lunch");
+
+        let out = super::apply(SAMPLE, &toml).unwrap();
+
+        assert_eq!(
+            out,
+            SAMPLE.replace("SUMMARY:Team sync", "SUMMARY:Team lunch")
+        );
+    }
+
+    #[test]
+    fn apply_ignores_empty_fields() {
         // A whole blank form drops every modeled field yet keeps the
         // unknown property and the sibling component.
         let blank = super::project(&Default::default());
 
-        let out = super::apply(&ical, &blank).unwrap();
+        let out = super::apply(SAMPLE, &blank).unwrap();
 
         assert!(!out.contains("SUMMARY:"));
         assert!(!out.contains("DTSTART"));
@@ -943,17 +907,16 @@ mod tests {
         assert!(!toml.contains("uid"));
 
         // Preserved on round-trip, and not overridable from the buffer.
-        let out = super::apply(&ical, "uid = \"hacked\"\n").unwrap();
+        let out = super::apply(SAMPLE, "uid = \"hacked\"\n").unwrap();
         assert!(out.contains("UID:abc@example"));
         assert!(!out.contains("hacked"));
     }
 
     #[test]
     fn apply_edits_modeled_field() {
-        let ical = ical::parse(SAMPLE).unwrap();
         let edited = "summary = \"New title\"\n";
 
-        let out = super::apply(&ical, edited).unwrap();
+        let out = super::apply(SAMPLE, edited).unwrap();
 
         assert!(out.contains("SUMMARY:New title"));
         assert!(!out.contains("Team sync"));
@@ -962,16 +925,14 @@ mod tests {
 
     #[test]
     fn apply_renders_all_day_and_utc_dates() {
-        let ical = ical::parse(SAMPLE).unwrap();
-
-        let all_day = super::apply(&ical, "dtstart = \"2026-12-25\"\n").unwrap();
+        let all_day = super::apply(SAMPLE, "dtstart = \"2026-12-25\"\n").unwrap();
         assert!(all_day.contains("DTSTART;VALUE=DATE:20261225"));
 
-        let utc = super::apply(&ical, "dtstart = \"2026-06-13 14:00 UTC\"\n").unwrap();
+        let utc = super::apply(SAMPLE, "dtstart = \"2026-06-13 14:00 UTC\"\n").unwrap();
         assert!(utc.contains("DTSTART:20260613T140000Z"));
 
         let zoned = super::apply(
-            &ical,
+            SAMPLE,
             "dtstart = \"2026-06-13 09:30\"\ndtstart_tz = \"Europe/Paris\"\n",
         )
         .unwrap();

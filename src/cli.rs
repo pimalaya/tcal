@@ -19,7 +19,6 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use calcard::icalendar::ICalendar;
 use chrono::Utc;
 use clap::{CommandFactory, Parser, Subcommand};
 use pimalaya_cli::{
@@ -86,7 +85,8 @@ pub struct TemplateCommand {
 
 impl TemplateCommand {
     pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
-        let ical = load(&self.source)?;
+        let src = load(&self.source)?;
+        let ical = ical::parse(&src)?;
         let toml = template::project(&ical);
 
         write_out(self.output.as_deref(), toml.as_bytes())
@@ -108,13 +108,14 @@ pub struct EditCommand {
 
 impl EditCommand {
     pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
-        let ical = load(&self.source)?;
+        let src = load(&self.source)?;
+        let ical = ical::parse(&src)?;
         let scaffold = template::project(&ical);
 
         let edited = edit::edit_with_builder(&scaffold, edit::Builder::new().suffix(".toml"))
             .context("Cannot spawn editor")?;
 
-        let out = template::apply(&ical, &edited)?;
+        let out = template::apply(&src, &edited)?;
 
         let target = self.output.or_else(|| self.source.file_path());
         write_out(target.as_deref(), out.as_bytes())
@@ -174,15 +175,17 @@ impl SourceArg {
     }
 }
 
-/// Load the source iCalendar, or seed a fresh one for a blank template.
-fn load(source: &SourceArg) -> Result<ICalendar> {
+/// Load the raw source iCalendar text, or seed a fresh one for a blank
+/// template. Returning the original text (not a parsed model) lets
+/// [`template::apply`] preserve every untouched byte.
+fn load(source: &SourceArg) -> Result<String> {
     match source.resolve()? {
-        Some(text) => Ok(ical::parse(&text)?),
+        Some(text) => Ok(text),
         None => {
             // A new event is seeded with a fresh UID and DTSTAMP so the
             // result is a valid VEVENT from the start.
             let stamp = Utc::now().format("%Y%m%dT%H%M%SZ");
-            let text = format!(
+            Ok(format!(
                 "BEGIN:VCALENDAR\r\n\
                  VERSION:2.0\r\n\
                  PRODID:-//Pimalaya//tcal//EN\r\n\
@@ -192,8 +195,7 @@ fn load(source: &SourceArg) -> Result<ICalendar> {
                  END:VEVENT\r\n\
                  END:VCALENDAR\r\n",
                 Uuid::new_v4()
-            );
-            Ok(ical::parse(&text)?)
+            ))
         }
     }
 }
