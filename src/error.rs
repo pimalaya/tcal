@@ -1,6 +1,6 @@
 //! The crate-wide error and result types.
 
-use std::result;
+use core::result;
 
 use thiserror::Error;
 
@@ -16,9 +16,9 @@ pub enum TcalError {
     /// The edited TOML buffer is not valid TOML.
     #[error("Cannot parse TOML buffer")]
     ParseToml(#[source] toml_edit::TomlError),
-    /// The iCalendar carries no VEVENT to fold the edits back onto.
-    #[error("No VEVENT component found in the iCalendar")]
-    NoEvent,
+    /// A requested component type key names no modeled component type.
+    #[error("Unknown component {0:?}; expected event, todo, journal, free-busy or timezone")]
+    UnknownComponent(String),
 }
 
 /// The global `Result` alias of the library.

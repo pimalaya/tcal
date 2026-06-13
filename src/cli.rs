@@ -1,16 +1,15 @@
 //! The `tcal` binary: two verbs over the [`crate::template`] projection.
 //!
-//! - `template [SOURCE]`: print the TOML scaffold, blank or prefilled
-//!   from an iCalendar. Always emits TOML.
-//! - `edit [SOURCE]`: project, open `$EDITOR`, apply the edits back onto
-//!   the source, and emit the resulting iCalendar. Always emits an
-//!   iCalendar.
+//! - `template [SOURCE]`: print the TOML scaffold, blank or prefilled from an
+//!   iCalendar. Always emits TOML.
+//! - `edit [SOURCE]`: project, open `$EDITOR`, apply the edits back onto the
+//!   source, and emit the resulting iCalendar. Always emits an iCalendar.
 //!
-//! `SOURCE` resolves deterministically: `-` reads stdin, an existing
-//! file is read, otherwise the value is treated as literal iCalendar
-//! contents, and omitting it starts from a blank template. The TOML is
-//! an editing affordance; the only path back to an iCalendar is `edit`,
-//! where the original is still in hand.
+//! `SOURCE` resolves deterministically: `-` reads stdin, an existing file is
+//! read, otherwise the value is treated as literal iCalendar contents, and
+//! omitting it starts from a blank template. The TOML is an editing affordance;
+//! the only path back to an iCalendar is `edit`, where the original is still in
+//! hand.
 
 use std::{
     fs,
@@ -72,12 +71,54 @@ impl Command {
     }
 }
 
+/// Selection of component types to show, by flag. Cumulative: none shows the
+/// whole calendar (the default), one flattens that type as the document root,
+/// two or more keep the VCALENDAR root and show only those types. Types not
+/// selected are left untouched on save.
+#[derive(Debug, Parser)]
+pub struct ComponentFlags {
+    /// Show events (VEVENT).
+    #[arg(long)]
+    pub event: bool,
+    /// Show to-dos (VTODO).
+    #[arg(long)]
+    pub todo: bool,
+    /// Show journals (VJOURNAL).
+    #[arg(long)]
+    pub journal: bool,
+    /// Show free/busy reports (VFREEBUSY).
+    #[arg(long)]
+    pub free_busy: bool,
+    /// Show time zones (VTIMEZONE).
+    #[arg(long)]
+    pub timezone: bool,
+}
+
+impl ComponentFlags {
+    /// The selected component type keys, in a stable order. Empty means no
+    /// filter: show every type.
+    pub fn selected(&self) -> Vec<String> {
+        [
+            (self.event, "event"),
+            (self.todo, "todo"),
+            (self.journal, "journal"),
+            (self.free_busy, "free-busy"),
+            (self.timezone, "timezone"),
+        ]
+        .into_iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, key)| key.to_owned())
+        .collect()
+    }
+}
+
 /// Print a TOML template, blank or prefilled from an iCalendar.
 #[derive(Debug, Parser)]
 pub struct TemplateCommand {
     #[command(flatten)]
     pub source: SourceArg,
-
+    #[command(flatten)]
+    pub components: ComponentFlags,
     /// Write to this file instead of stdout.
     #[arg(short, long, value_name = "PATH", value_parser = path_parser)]
     pub output: Option<PathBuf>,
@@ -87,8 +128,7 @@ impl TemplateCommand {
     pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
         let src = load(&self.source)?;
         let ical = ical::parse(&src)?;
-        let toml = template::project(&ical);
-
+        let toml = template::project_with(&ical, &self.components.selected())?;
         write_out(self.output.as_deref(), toml.as_bytes())
     }
 }
@@ -99,7 +139,8 @@ impl TemplateCommand {
 pub struct EditCommand {
     #[command(flatten)]
     pub source: SourceArg,
-
+    #[command(flatten)]
+    pub components: ComponentFlags,
     /// Write the resulting iCalendar here instead of stdout (or the
     /// source file, when editing one in place).
     #[arg(short, long, value_name = "PATH", value_parser = path_parser)]
@@ -110,13 +151,11 @@ impl EditCommand {
     pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
         let src = load(&self.source)?;
         let ical = ical::parse(&src)?;
-        let scaffold = template::project(&ical);
-
-        let edited = edit::edit_with_builder(&scaffold, edit::Builder::new().suffix(".toml"))
+        let types = self.components.selected();
+        let toml = template::project_with(&ical, &types)?;
+        let edited = edit::edit_with_builder(&toml, edit::Builder::new().suffix(".toml"))
             .context("Cannot spawn editor")?;
-
-        let out = template::apply(&src, &edited)?;
-
+        let out = template::apply_with(&src, &edited, &types)?;
         let target = self.output.or_else(|| self.source.file_path());
         write_out(target.as_deref(), out.as_bytes())
     }
@@ -154,6 +193,7 @@ impl SourceArg {
         }
 
         let trimmed = source.trim_start();
+
         if trimmed.starts_with("BEGIN:VCALENDAR") || trimmed.starts_with("BEGIN:VEVENT") {
             return Ok(Some(source.clone()));
         }
@@ -161,8 +201,8 @@ impl SourceArg {
         bail!("Source {source:?} is neither a readable file nor iCalendar contents")
     }
 
-    /// The source as an existing file path, when it resolves to one;
-    /// used for the in-place write default of `edit`.
+    /// The source as an existing file path, when it resolves to one; used for
+    /// the in-place write default of `edit`.
     fn file_path(&self) -> Option<PathBuf> {
         let source = self.source.as_ref()?;
 
@@ -182,9 +222,10 @@ fn load(source: &SourceArg) -> Result<String> {
     match source.resolve()? {
         Some(text) => Ok(text),
         None => {
-            // A new event is seeded with a fresh UID and DTSTAMP so the
-            // result is a valid VEVENT from the start.
+            // A new event is seeded with a fresh UID and DTSTAMP so the result
+            // is a valid VEVENT from the start.
             let stamp = Utc::now().format("%Y%m%dT%H%M%SZ");
+
             Ok(format!(
                 "BEGIN:VCALENDAR\r\n\
                  VERSION:2.0\r\n\

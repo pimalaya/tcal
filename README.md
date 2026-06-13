@@ -2,11 +2,11 @@
 
 CLI and lib to edit calendar events ([iCalendar](https://www.rfc-editor.org/rfc/rfc5545) `VEVENT`) as ergonomic TOML: the TOML calendar, à la [jCal](https://www.rfc-editor.org/rfc/rfc7265).
 
-iCalendar is already plain text, so there is nothing to compress; what hurts is its crypticness (date-times like `20260613T140000`, `;TZID=` parameters, opaque `PARTSTAT`/`ROLE` codes) and the sheer number of properties nobody remembers. tcal projects the `VEVENT` of an iCalendar into a commented, prefilled TOML scaffold you edit in `$EDITOR`, then folds your edits back onto the original calendar. Date-times become a friendly `2026-06-13 14:00` with the time zone on its own line.
+iCalendar is already plain text, so there is nothing to compress; what hurts is its crypticness (date-times like `20260613T140000`, `;TZID=` parameters, opaque `PARTSTAT`/`ROLE` codes) and the sheer number of properties nobody remembers. tcal projects an iCalendar into a commented, prefilled TOML scaffold you edit in `$EDITOR`, then folds your edits back onto the original calendar. Cryptic property names are given friendly TOML keys (`DTSTART` becomes `date-start`, `RRULE` becomes `recurrence`, an attendee's `CN`/`PARTSTAT` become `display-name`/`status`). By default every component type is shown as a `[[block]]` (events, to-dos, journals, free/busy, time zones), with the actual instances filled in and an empty example for each absent type, so the scaffold doubles as documentation; you keep what you need. Per-type flags (`--event`, `--todo`, ...) narrow the view: one flag flattens that type at the root, several show only those types, and on save the types you did not select are left untouched (so `--todo` on an event adds a to-do without disturbing the event). Date-times become a friendly `2026-06-13 14:00` with the time zone on its own line.
 
 This repository ships two layers:
 
-- Low-level **library** projecting between a [calcard](https://crates.io/crates/calcard) `ICalendar` and TOML: `project` emits the scaffold from the first `VEVENT`, `apply` rebuilds modeled fields from the edited buffer while carrying every unmodeled property (the app-managed `UID` and `DTSTAMP`, custom `X-*`) and every sibling component (`VALARM`, `VTIMEZONE`) over verbatim.
+- Low-level **library** projecting between a [calcard](https://crates.io/crates/calcard) `ICalendar` and TOML: `project` emits the whole-calendar scaffold (`[[block]]` per component), `project_with` narrows it to a chosen set of types (one flattened at the root, several filtered under the `VCALENDAR`), and `apply` / `apply_with` detect the buffer's shape and patch it back onto the original text, reconciling only the selected types while carrying every unmodeled property (the app-managed `UID` and `DTSTAMP`, custom `X-*`) and every unselected or unmodeled component type over verbatim.
 - High-level **CLI** with two verbs: `template` prints the TOML scaffold (blank or prefilled), `edit` runs the full "project to `$EDITOR` to apply" round-trip and emits the resulting iCalendar.
 
 ## Table of contents
@@ -29,9 +29,13 @@ This repository ships two layers:
 ## Features
 
 - **iCalendar event to TOML projection**, backed by [calcard](https://crates.io/crates/calcard) (RFC 5545 parser and writer).
-- **Friendly date-times**: the cryptic `20260613T140000` becomes `2026-06-13 14:00`, all-day events are `2026-06-13`, UTC values end in ` UTC`, and the time zone (`TZID`) moves onto its own `dtstart_tz` key.
-- **Discoverable form**: every modeled property is listed and empty (an empty value is ignored, like a removed line), prefilled when present, with a comment only where the value is not self-evident. Recurrence (`rrule`) and attendees (`role`, `partstat`) carry their accepted values inline; new events are seeded with a fresh `UID` and `DTSTAMP`.
-- **Minimal diff, lossless for everything unmodeled**: `apply` patches the original text through a format-preserving editor, re-rendering only the lines you changed. Properties tcal does not list (the app-managed `UID` and `DTSTAMP`, `SEQUENCE`, custom `X-*`), sibling components (`VALARM`, `VTIMEZONE`), folding, casing and ordering are all kept byte-for-byte. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original calendar.
+- **Friendly date-times**: the cryptic `20260613T140000` becomes `2026-06-13 14:00`, all-day events are `2026-06-13`, UTC values end in ` UTC`, and the time zone (`TZID`) moves onto its own `date-start-tz` key. Every date-time key is prefixed `date-` (`date-start`, `date-end`, `date-due`, ...).
+- **Friendly keys**: cryptic property names get readable TOML keys (`date-start`, `date-end`, `offset-from`, an attendee's `display-name`/`status`); enumerated values are listed lowercase in the hints (`confirmed, tentative, cancelled`) and uppercased to their canonical form on export; numeric properties (`priority`, `percent`, `repeat`) are plain numbers.
+- **Structured recurrence**: the dense `RRULE` is broken into dotted `recurrence.*` keys (`recurrence.frequency`, `recurrence.interval`, `recurrence.count`, `recurrence.until`, `recurrence.by-day`, `recurrence.by-month`, `recurrence.by-month-day`, `recurrence.by-position`, `recurrence.week-start`), with `until` shown as a friendly date and a raw `recurrence.rule = "..."` escape hatch for rules using parts tcal does not model, so nothing is lost.
+- **Structured duration**: a `DURATION` (and an alarm `TRIGGER` offset) is broken into dotted `duration.week`/`duration.day`/`duration.hour`/`duration.min`/`duration.sec` magnitudes. The sign is implied by context (a trigger fires before the event, so it is negative), so you only fill the amounts; a value that is not a plain duration falls back to a raw `duration.raw = "..."` key.
+- **Grouped, discoverable form**: every modeled property is listed and empty (an empty value is ignored, like a removed line), prefilled when present, with a comment only where the value is not self-evident. Fields cluster by shape, separated by blank lines: the bare scalar keys (`summary`/`description` leading), then the dates, the duration, and the recurrence, each its own group. Inline comments are tab-aligned to a single column across the whole block, so they all sit at the same level. Attendees expand into a `[[attendee]]` block (`display-name` first, then `value`, `role`, `status`) carrying their accepted values inline; new events are seeded with a fresh `UID` and `DTSTAMP`.
+- **Whole calendar by default, filtered on demand**: by default every component type is a repeatable `[[block]]` (`event`, `todo`, `journal`, `free-busy`, `timezone`, with alarms and time-zone rules nested like `[[event.alarm]]`) — actual instances filled in, an empty example for each absent type, so the scaffold doubles as a menu. Add, edit, or drop a block to add, change, or remove a component (an empty block is ignored). The per-type flags cumulate: `tcal template --event` flattens a single event at the root (no `[[event]]` ceremony), `--event --todo` shows just those two as blocks, and a flag filter only ever touches the types it shows, so editing through it adds to a calendar without removing the rest.
+- **Minimal diff, lossless for everything unmodeled**: `apply` patches the original text through a format-preserving editor, re-rendering only the lines you changed. Properties tcal does not list (the app-managed `UID` and `DTSTAMP`, `SEQUENCE`, custom `X-*`), other components (`VTIMEZONE`), folding, casing and ordering are all kept byte-for-byte. The TOML is an editing affordance, not an interchange format, so `apply` always works against the original calendar.
 - **Two verbs, no subcommand maze**: `template` always emits TOML, `edit` always emits an iCalendar; `SOURCE` resolves deterministically (`-` is stdin, an existing file is read, otherwise literal iCalendar contents, and omitting it starts a blank template).
 
 > [!TIP]
@@ -114,7 +118,8 @@ use tcal::{ical, template};
 
 let calendar = ical::parse(input)?;
 
-// Emit the prefilled, documented scaffold from the first VEVENT.
+// Emit the whole-calendar scaffold ([[block]] per component).
+// (project_with(&calendar, &["event".into()])? narrows to chosen types.)
 let scaffold = template::project(&calendar);
 
 // ... user edits `scaffold` in an editor ...
@@ -137,6 +142,8 @@ Project an existing event to TOML (path, stdin via `-`, or literal contents):
 ```sh
 tcal template event.ics
 tcal template - < event.ics
+tcal template --event event.ics              # just the event, flattened
+tcal template --event --todo event.ics       # only events and to-dos
 ```
 
 Edit an event in `$EDITOR`. With a file source, the result is written back in place; otherwise it goes to stdout (or `--output`):
@@ -158,13 +165,13 @@ tcal edit --output meeting.ics
 <details>
   <summary>Which calendar component does tcal edit?</summary>
 
-  The first `VEVENT` of the iCalendar. Other components (`VTIMEZONE`, `VALARM`, additional events) are kept verbatim but not surfaced in the scaffold. `VTODO`, `VJOURNAL` and friends are out of scope for now.
+  All of them, as `[[blocks]]`: `event`, `todo`, `journal`, `free-busy`, `timezone` (with nested `[[event.alarm]]`, `[[timezone.standard]]`/`[[timezone.daylight]]`). Every type is listed (actual instances filled, an empty example for each absent type); repeated components show as repeated blocks. The per-type flags narrow the view: one (`--event`) flattens just that type at the root, several (`--event --todo`) show only those as blocks, and a filtered edit only touches the types it shows (so the rest of the calendar is preserved on save). Component types tcal does not model, and unmodeled properties, are kept verbatim but not surfaced.
 </details>
 
 <details>
   <summary>How do I write dates and times?</summary>
 
-  Use `YYYY-MM-DD HH:MM` for a timed event (`2026-06-13 14:00`), `YYYY-MM-DD` alone for an all-day event, and append ` UTC` for a UTC value. For a zoned time, set the adjacent `dtstart_tz` / `dtend_tz` key to an IANA zone like `Europe/Paris`; leave it empty for UTC or floating time. A raw iCalendar value (`20260613T140000`) is accepted too.
+  Use `YYYY-MM-DD HH:MM` for a timed event (`2026-06-13 14:00`), `YYYY-MM-DD` alone for an all-day event, and append ` UTC` for a UTC value. For a zoned time, set the adjacent `date-start-tz` / `date-end-tz` key to an IANA zone like `Europe/Paris`; leave it empty for UTC or floating time. A raw iCalendar value (`20260613T140000`) is accepted too.
 </details>
 
 <details>
@@ -182,7 +189,7 @@ tcal edit --output meeting.ics
 <details>
   <summary>What happens to properties and components tcal does not list?</summary>
 
-  They are kept verbatim. The scaffold only surfaces the modeled `VEVENT` vocabulary, but `apply` carries every other property (`DTSTAMP`, `SEQUENCE`, custom `X-*`) and every sibling component (`VALARM`, `VTIMEZONE`) straight from the original calendar into the result.
+  They are kept verbatim. The scaffold surfaces the modeled component vocabulary, but `apply` carries every unmodeled property (`DTSTAMP`, `SEQUENCE`, custom `X-*`) and every unmodeled component type straight from the original calendar into the result. Unmodeled properties inside an edited component are likewise preserved (removing a whole block, of course, removes the component and everything in it).
 </details>
 
 <details>

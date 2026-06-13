@@ -14,7 +14,7 @@
 //! The core invariant is round-trip identity: `parse(s).to_string() == s`
 //! for any input.
 
-use std::fmt;
+use core::fmt;
 
 /// The longest octet length of a physical line before folding kicks in,
 /// per RFC 5545 section 3.1; mirrors calcard's writer.
@@ -52,6 +52,58 @@ impl Calendar {
     pub fn component_mut(&mut self, ty: &str) -> Option<&mut Component> {
         find_component_mut(&mut self.items, ty)
     }
+
+    /// Every top-level component of the given type, in document order
+    /// (e.g. each `VCALENDAR`), for reading.
+    pub fn components(&self, ty: &str) -> impl Iterator<Item = &Component> {
+        components_of(&self.items, ty)
+    }
+
+    /// Every top-level component of the given type, in document order,
+    /// for in-place mutation. Use `.nth(i)` to address one occurrence.
+    pub fn components_mut(&mut self, ty: &str) -> impl Iterator<Item = &mut Component> {
+        components_of_mut(&mut self.items, ty)
+    }
+
+    /// Like [`Component::set_component_count`], but at the document root
+    /// (for a stream with no `VCALENDAR` wrapper).
+    pub fn set_component_count(&mut self, ty: &str, n: usize) {
+        let eol = root_eol(&self.items);
+        set_components_in(&mut self.items, ty, n, &eol);
+    }
+}
+
+/// A node that holds direct child components: either the whole
+/// [`Calendar`] (root level) or a [`Component`] (e.g. the `VCALENDAR`).
+/// Lets callers reconcile components uniformly whether or not the stream
+/// has a wrapping component.
+pub trait Container {
+    /// This container's direct child components of the given type.
+    fn components_mut(&mut self, ty: &str) -> impl Iterator<Item = &mut Component>;
+    /// Ensure exactly `n` direct child components of the given type.
+    fn set_component_count(&mut self, ty: &str, n: usize);
+}
+
+impl Container for Calendar {
+    fn components_mut(&mut self, ty: &str) -> impl Iterator<Item = &mut Component> {
+        components_of_mut(&mut self.items, ty)
+    }
+
+    fn set_component_count(&mut self, ty: &str, n: usize) {
+        let eol = root_eol(&self.items);
+        set_components_in(&mut self.items, ty, n, &eol);
+    }
+}
+
+impl Container for Component {
+    fn components_mut(&mut self, ty: &str) -> impl Iterator<Item = &mut Component> {
+        components_of_mut(&mut self.items, ty)
+    }
+
+    fn set_component_count(&mut self, ty: &str, n: usize) {
+        let eol = eol_of(&self.begin_raw).to_owned();
+        set_components_in(&mut self.items, ty, n, &eol);
+    }
 }
 
 impl fmt::Display for Calendar {
@@ -81,20 +133,37 @@ impl Component {
         find_component_mut(&mut self.items, ty)
     }
 
+    /// This component's direct child components of the given type, in
+    /// document order, for reading.
+    pub fn components(&self, ty: &str) -> impl Iterator<Item = &Component> {
+        components_of(&self.items, ty)
+    }
+
+    /// This component's direct child components of the given type, in
+    /// document order, for in-place mutation. Use `.nth(i)` to address
+    /// one occurrence (e.g. the 2nd `VALARM` of a `VEVENT`).
+    pub fn components_mut(&mut self, ty: &str) -> impl Iterator<Item = &mut Component> {
+        components_of_mut(&mut self.items, ty)
+    }
+
+    /// This component's own direct properties matching `name`, in
+    /// document order, for reading.
+    pub fn properties(&self, name: &str) -> impl Iterator<Item = &Property> {
+        properties_of(&self.items, name)
+    }
+
+    /// This component's own direct properties matching `name`, in
+    /// document order, for in-place mutation. Use `.nth(i)` then
+    /// [`Property::set`] to rewrite one occurrence (e.g. the 3rd
+    /// `ATTENDEE`) without restating the whole group.
+    pub fn properties_mut(&mut self, name: &str) -> impl Iterator<Item = &mut Property> {
+        properties_of_mut(&mut self.items, name)
+    }
+
     /// The logical content lines of this component's own direct
     /// properties matching `name` (no enclosing component is searched).
     pub fn get_all(&self, name: &str) -> Vec<&str> {
-        let upper = name.to_uppercase();
-
-        self.items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Property(property) if property.name == upper => {
-                    Some(property.logical.as_str())
-                }
-                _ => None,
-            })
-            .collect()
+        self.properties(name).map(Property::logical).collect()
     }
 
     /// Make this component's direct properties named `name` exactly equal
@@ -157,6 +226,16 @@ impl Component {
         self.set_all(name, &[]);
     }
 
+    /// Ensure exactly `n` direct child components of type `ty` exist:
+    /// append empty `BEGIN`/`END` components when there are fewer, or
+    /// remove the trailing surplus when there are more. New components are
+    /// rendered with this component's end of line; fill them in afterwards
+    /// via [`Component::components_mut`].
+    pub fn set_component_count(&mut self, ty: &str, n: usize) {
+        let eol = eol_of(&self.begin_raw).to_owned();
+        set_components_in(&mut self.items, ty, n, &eol);
+    }
+
     /// Where a new property should land: after the last direct property,
     /// else before the first nested component, else at the end (which
     /// sits just before `END`, kept separately in `end_raw`).
@@ -202,10 +281,30 @@ impl Item {
 
 /// A single content line (`NAME;PARAMS:VALUE`): unfolded for matching but
 /// kept byte-for-byte (folding and end of line included) for output.
-struct Property {
+pub struct Property {
     name: String,
     logical: String,
     raw: String,
+}
+
+impl Property {
+    /// The unfolded content line (`NAME;PARAMS:VALUE`), without an end of
+    /// line.
+    pub fn logical(&self) -> &str {
+        &self.logical
+    }
+
+    /// Replace this property's content line with `line`, re-rendering
+    /// (folding and end of line) only when it differs, so an unchanged
+    /// value keeps its original bytes. The line's own end of line is
+    /// preserved.
+    pub fn set(&mut self, line: &str) {
+        if self.logical != line {
+            let eol = eol_of(&self.raw).to_owned();
+            self.logical = line.to_owned();
+            self.raw = render(line, &eol);
+        }
+    }
 }
 
 /// A logical (unfolded) line: its joined content and the exact original
@@ -285,6 +384,52 @@ fn find_component_mut<'a>(items: &'a mut [Item], ty: &str) -> Option<&'a mut Com
     }
 
     None
+}
+
+/// The direct components of `items` matching `ty`, in order.
+fn components_of<'a>(items: &'a [Item], ty: &str) -> impl Iterator<Item = &'a Component> {
+    let upper = ty.to_uppercase();
+
+    items.iter().filter_map(move |item| match item {
+        Item::Component(component) if component.name == upper => Some(component),
+        _ => None,
+    })
+}
+
+/// The direct components of `items` matching `ty`, in order, mutable.
+fn components_of_mut<'a>(
+    items: &'a mut [Item],
+    ty: &str,
+) -> impl Iterator<Item = &'a mut Component> {
+    let upper = ty.to_uppercase();
+
+    items.iter_mut().filter_map(move |item| match item {
+        Item::Component(component) if component.name == upper => Some(component),
+        _ => None,
+    })
+}
+
+/// The direct properties of `items` matching `name`, in order.
+fn properties_of<'a>(items: &'a [Item], name: &str) -> impl Iterator<Item = &'a Property> {
+    let upper = name.to_uppercase();
+
+    items.iter().filter_map(move |item| match item {
+        Item::Property(property) if property.name == upper => Some(property),
+        _ => None,
+    })
+}
+
+/// The direct properties of `items` matching `name`, in order, mutable.
+fn properties_of_mut<'a>(
+    items: &'a mut [Item],
+    name: &str,
+) -> impl Iterator<Item = &'a mut Property> {
+    let upper = name.to_uppercase();
+
+    items.iter_mut().filter_map(move |item| match item {
+        Item::Property(property) if property.name == upper => Some(property),
+        _ => None,
+    })
 }
 
 /// Split `src` into logical lines, joining folded continuations (a
@@ -373,6 +518,55 @@ fn eol_of(raw: &str) -> &str {
         "\n"
     } else {
         "\r\n"
+    }
+}
+
+/// The end of line used by the items at the document root, inferred from
+/// the first line that carries one, defaulting to CRLF.
+fn root_eol(items: &[Item]) -> String {
+    for item in items {
+        let raw = match item {
+            Item::Component(component) => &component.begin_raw,
+            Item::Property(property) => &property.raw,
+            Item::Raw(raw) => raw,
+        };
+        if raw.contains('\n') {
+            return eol_of(raw).to_owned();
+        }
+    }
+
+    "\r\n".to_owned()
+}
+
+/// Make the direct child components of `items` named `ty` number exactly
+/// `n`: append empty `BEGIN`/`END` components rendered with `eol`, or drop
+/// the trailing surplus.
+fn set_components_in(items: &mut Vec<Item>, ty: &str, n: usize, eol: &str) {
+    let upper = ty.to_uppercase();
+
+    let positions: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| match item {
+            Item::Component(component) if component.name == upper => Some(index),
+            _ => None,
+        })
+        .collect();
+
+    if positions.len() < n {
+        for _ in positions.len()..n {
+            items.push(Item::Component(Component {
+                name: upper.clone(),
+                begin_raw: format!("BEGIN:{upper}{eol}"),
+                items: Vec::new(),
+                end_raw: format!("END:{upper}{eol}"),
+            }));
+        }
+    } else {
+        // Drop surplus from the back so earlier indices stay valid.
+        for &index in positions[n..].iter().rev() {
+            items.remove(index);
+        }
     }
 }
 
@@ -540,5 +734,87 @@ mod tests {
         assert_eq!(event.get_all("SUMMARY"), vec!["SUMMARY:Lunch"]);
         // The nested alarm's TRIGGER is not a direct property.
         assert!(event.get_all("TRIGGER").is_empty());
+    }
+
+    #[test]
+    fn properties_mut_edits_one_occurrence() {
+        let src = "BEGIN:VEVENT\r\n\
+            ATTENDEE:mailto:a@x\r\n\
+            ATTENDEE:mailto:b@x\r\n\
+            ATTENDEE:mailto:c@x\r\n\
+            ATTENDEE:mailto:d@x\r\n\
+            ATTENDEE:mailto:e@x\r\n\
+            END:VEVENT\r\n";
+        let mut cal = parse(src);
+
+        cal.component_mut("VEVENT")
+            .unwrap()
+            .properties_mut("ATTENDEE")
+            .nth(2)
+            .unwrap()
+            .set("ATTENDEE:mailto:c2@x");
+
+        // Only the 3rd ATTENDEE changes; the others stay byte-for-byte.
+        assert_eq!(cal.to_string(), src.replace("c@x", "c2@x"));
+    }
+
+    #[test]
+    fn property_set_same_value_keeps_bytes() {
+        let mut cal = parse(SAMPLE);
+        cal.component_mut("VEVENT")
+            .unwrap()
+            .properties_mut("SUMMARY")
+            .next()
+            .unwrap()
+            .set("SUMMARY:Lunch");
+        assert_eq!(cal.to_string(), SAMPLE);
+    }
+
+    #[test]
+    fn set_component_count_appends_and_removes() {
+        let src = "BEGIN:VEVENT\r\nSUMMARY:x\r\nEND:VEVENT\r\n";
+
+        // Append two empty VALARM components, leaving the rest intact.
+        let mut cal = parse(src);
+        cal.component_mut("VEVENT")
+            .unwrap()
+            .set_component_count("VALARM", 2);
+        let grown = cal.to_string();
+        assert_eq!(grown.matches("BEGIN:VALARM\r\nEND:VALARM\r\n").count(), 2);
+        assert!(grown.starts_with("BEGIN:VEVENT\r\nSUMMARY:x\r\nBEGIN:VALARM"));
+
+        // Back down to zero removes them and restores the original bytes.
+        let mut cal = parse(&grown);
+        cal.component_mut("VEVENT")
+            .unwrap()
+            .set_component_count("VALARM", 0);
+        assert_eq!(cal.to_string(), src);
+    }
+
+    #[test]
+    fn components_mut_reaches_a_nested_alarm() {
+        let src = "BEGIN:VEVENT\r\n\
+            SUMMARY:x\r\n\
+            BEGIN:VALARM\r\n\
+            TRIGGER:-PT15M\r\n\
+            END:VALARM\r\n\
+            BEGIN:VALARM\r\n\
+            TRIGGER:-PT30M\r\n\
+            END:VALARM\r\n\
+            END:VEVENT\r\n";
+        let mut cal = parse(src);
+
+        // Edit the TRIGGER of the 2nd VALARM only.
+        cal.component_mut("VEVENT")
+            .unwrap()
+            .components_mut("VALARM")
+            .nth(1)
+            .unwrap()
+            .properties_mut("TRIGGER")
+            .next()
+            .unwrap()
+            .set("TRIGGER:-PT45M");
+
+        assert_eq!(cal.to_string(), src.replace("-PT30M", "-PT45M"));
     }
 }
