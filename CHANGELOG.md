@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Offered to re-edit on a broken `edit` buffer instead of discarding it.
+
+  When the edited TOML fails to parse, `edit` now shows the parse error and prompts to re-open `$EDITOR` seeded with the user's own buffer, looping until it parses or the user declines. JSON output stays non-interactive: the error just propagates.
+
 ### Fixed
 
 - Projected typed values that have no borrowed text instead of dropping them, found by adding real calendars to the fixture database.

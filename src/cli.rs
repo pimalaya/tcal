@@ -29,10 +29,11 @@ use pimalaya_cli::{
     },
     long_version,
     printer::Printer,
+    prompt,
 };
 use uuid::Uuid;
 
-use crate::{ical, template};
+use crate::{error::TcalError, ical, template};
 
 /// Root CLI parser.
 #[derive(Parser, Debug)]
@@ -149,14 +150,35 @@ pub struct EditCommand {
 }
 
 impl EditCommand {
-    pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
+    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         let src = load(&self.source)?;
         let ical = ical::parse(&src)?;
         let types = self.components.selected();
         let toml = template::project_with(&ical, &types)?;
-        let edited = edit::edit_with_builder(&toml, edit::Builder::new().suffix(".toml"))
-            .context("Cannot spawn editor")?;
-        let out = template::apply_with(&src, &edited, &types)?;
+
+        let mut builder = edit::Builder::new();
+        builder.suffix(".toml");
+
+        let mut edited = edit::edit_with_builder(&toml, &builder).context("Cannot spawn editor")?;
+
+        // A broken edit is recoverable: re-open the editor seeded with the
+        // user's own buffer so the edits are never lost. JSON output is
+        // non-interactive, so the error just propagates there.
+        let out = loop {
+            match template::apply_with(&src, &edited, &types) {
+                Ok(out) => break out,
+                Err(TcalError::ParseToml(err)) if !printer.is_json() => {
+                    let message = format!("Cannot parse TOML buffer:\n\n{err}\nRe-edit to fix it?");
+                    if !prompt::bool(message, true)? {
+                        return Err(TcalError::ParseToml(err).into());
+                    }
+                    edited = edit::edit_with_builder(&edited, &builder)
+                        .context("Cannot spawn editor")?;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        };
+
         let target = self.output.or_else(|| self.source.file_path());
         write_out(target.as_deref(), out.as_bytes())
     }
