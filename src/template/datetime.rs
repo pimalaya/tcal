@@ -219,25 +219,32 @@ pub fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)
     Some((date, time, utc))
 }
 
-/// Render a calcard date-time as a friendly `YYYY-MM-DD[ HH:MM[:SS]]`,
-/// appending ` UTC` for a UTC value; a value with no time is an all-day
-/// `YYYY-MM-DD`.
-pub fn friendly_date(dt: &PartialDateTime) -> String {
-    let (Some(year), Some(month), Some(day)) = (dt.year, dt.month, dt.day) else {
-        return String::new();
-    };
-    let date = format!("{year:04}-{month:02}-{day:02}");
+/// Render a calcard date-time as its RFC 5545 basic ISO 8601 string,
+/// covering the partial forms native TOML cannot hold (a yearless `--0415`
+/// or year-only `2009` date), with a `T..` time when present. This is the
+/// projection fallback for the partial values [`toml_date`] returns `None`
+/// for.
+pub fn ical_date(dt: &PartialDateTime) -> String {
+    let mut out = String::new();
 
-    let (Some(hour), Some(minute)) = (dt.hour, dt.minute) else {
-        return date;
-    };
-    let mut out = format!("{date} {hour:02}:{minute:02}");
-
-    if let Some(second) = dt.second.filter(|second| *second != 0) {
-        out.push_str(&format!(":{second:02}"));
+    match (dt.year, dt.month, dt.day) {
+        (Some(y), Some(m), Some(d)) => out.push_str(&format!("{y:04}{m:02}{d:02}")),
+        (Some(y), Some(m), None) => out.push_str(&format!("{y:04}-{m:02}")),
+        (Some(y), None, None) => out.push_str(&format!("{y:04}")),
+        (None, Some(m), Some(d)) => out.push_str(&format!("--{m:02}{d:02}")),
+        (None, Some(m), None) => out.push_str(&format!("--{m:02}")),
+        (None, None, Some(d)) => out.push_str(&format!("---{d:02}")),
+        _ => {}
     }
-    if matches!((dt.tz_hour, dt.tz_minute), (Some(0), Some(0))) {
-        out.push_str(" UTC");
+
+    if let Some(hour) = dt.hour {
+        out.push_str(&format!("T{hour:02}"));
+        if let Some(minute) = dt.minute {
+            out.push_str(&format!("{minute:02}"));
+            if let Some(second) = dt.second {
+                out.push_str(&format!("{second:02}"));
+            }
+        }
     }
 
     out

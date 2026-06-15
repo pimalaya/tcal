@@ -13,9 +13,7 @@ use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{
-        DATE_HINT, date_line, friendly_date, is_utc, offset_text, toml_date, toml_date_line,
-    },
+    datetime::{DATE_HINT, date_line, ical_date, is_utc, offset_text, toml_date, toml_date_line},
     duration::{duration_lines, duration_value},
     line::Line,
     recurrence::{recur_lines, recur_rule},
@@ -585,15 +583,16 @@ impl Field {
                     .filter(|zone| !zone.is_empty());
 
                 // A complete value projects as a native TOML date or
-                // date-time; a partial one falls back to a friendly string.
-                // The named zone, if any, is kept beside it.
+                // date-time; a partial one (yearless or year-only) falls back
+                // to a quoted basic ISO 8601 string. The named zone, if any,
+                // is kept beside it.
                 let (rhs, zone) = match dt {
                     Some(dt) => match toml_date(dt) {
                         Some(native) => {
                             let zone = (!is_utc(dt)).then_some(tzid).flatten();
                             (native.to_string(), zone)
                         }
-                        None => (toml_str(&friendly_date(dt)), None),
+                        None => (toml_str(&ical_date(dt)), None),
                     },
                     None => (toml_str(""), None),
                 };
