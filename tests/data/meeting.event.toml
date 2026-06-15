@@ -15,9 +15,9 @@ priority = ""				# 0 = undefined, 1 = highest, 9 = lowest
 status = "CONFIRMED"			# confirmed, tentative, cancelled
 transparency = ""			# opaque, transparent
 
-date-start = "1997-09-03 16:30"		# 2026-06-13 14:30
+date-start = 1997-09-03T16:30:00	# 2026-06-13T14:30:00
 date-start-tz = "America/New_York"	# America/New_York; empty for UTC or floating
-date-end = "1997-09-03 19:00"		# 2026-06-13 14:30
+date-end = 1997-09-03T19:00:00		# 2026-06-13T14:30:00
 date-end-tz = "America/New_York"	# America/New_York; empty for UTC or floating
 
 duration.week = ""			# event length
@@ -29,7 +29,7 @@ duration.sec = ""
 recurrence.frequency = ""		# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""		# every N periods
 recurrence.count = ""			# total occurrences; alternative to until
-recurrence.until = ""			# 2026-06-13 14:30
+recurrence.until = ""			# 2026-06-13T14:30:00
 recurrence.by-day = []			# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []		# 1 to 12
 recurrence.by-month-day = []		# 1 to 31, negative counts from the end (-1 = last)

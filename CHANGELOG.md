@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   When the edited TOML fails to parse, `edit` now shows the parse error and prompts to re-open `$EDITOR` seeded with the user's own buffer, looping until it parses or the user declines. JSON output stays non-interactive: the error just propagates.
 
+- Projected date and date-time properties as native TOML values instead of quoted strings.
+
+  `date-start`, `date-end`, `date-due`, `date-completed`, the time-zone rule `date-start`, and the recurrence `until` now project as a TOML `date` (all-day), a local `datetime` (floating or zoned), or an offset `datetime` with `Z` (UTC), so editors and tooling can treat them as real dates. A named zone is carried in the adjacent `date-start-tz` key, which now appears only for a named zone, since UTC and floating values fold their zone into the value. `apply` reads the native value back and still accepts the older friendly `YYYY-MM-DD HH:MM[ UTC]` string form.
+
 ### Fixed
 
 - Projected typed values that have no borrowed text instead of dropping them, found by adding real calendars to the fixture database.

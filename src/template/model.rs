@@ -13,7 +13,9 @@ use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{DATE_HINT, date_line, friendly_date, offset_text},
+    datetime::{
+        DATE_HINT, date_line, friendly_date, is_utc, offset_text, toml_date, toml_date_line,
+    },
     duration::{duration_lines, duration_value},
     line::Line,
     recurrence::{recur_lines, recur_rule},
@@ -442,7 +444,7 @@ const TZRULE_FIELDS: &[Field] = &[
     Field {
         key: "date-start",
         name: "DTSTART",
-        hint: Some("local start: 1996-10-27 03:00"),
+        hint: Some("local start: 1996-10-27T03:00:00"),
         kind: Kind::Date,
     },
     Field {
@@ -574,26 +576,44 @@ impl Field {
 
             Kind::Date => {
                 let entry = entries.first();
-                let value = entry
+                let dt = entry
                     .and_then(|entry| entry.values.first())
-                    .and_then(|value| value.as_partial_date_time())
-                    .map(friendly_date)
-                    .unwrap_or_default();
-                let tz = entry
+                    .and_then(|value| value.as_partial_date_time());
+                let tzid = entry
                     .and_then(|entry| entry.parameters(&ICalendarParameterName::Tzid).next())
                     .and_then(|value| value.as_text())
-                    .unwrap_or_default();
+                    .filter(|zone| !zone.is_empty());
 
-                vec![
-                    Line {
-                        lhs: format!("{} = {}", self.key, toml_str(&value)),
-                        hint: self.hint.map(str::to_owned),
+                // A complete value projects as a native TOML date or
+                // date-time; a partial one falls back to a friendly string.
+                // The named zone, if any, is kept beside it.
+                let (rhs, zone) = match dt {
+                    Some(dt) => match toml_date(dt) {
+                        Some(native) => {
+                            let zone = (!is_utc(dt)).then_some(tzid).flatten();
+                            (native.to_string(), zone)
+                        }
+                        None => (toml_str(&friendly_date(dt)), None),
                     },
-                    Line {
-                        lhs: format!("{}-tz = {}", self.key, toml_str(tz)),
+                    None => (toml_str(""), None),
+                };
+
+                let mut lines = vec![Line {
+                    lhs: format!("{} = {}", self.key, rhs),
+                    hint: self.hint.map(str::to_owned),
+                }];
+
+                // The zone key is kept only for a named zone (a UTC or
+                // floating value needs none), and shown empty in the blank
+                // scaffold as the affordance to add one.
+                if zone.is_some() || dt.is_none() {
+                    lines.push(Line {
+                        lhs: format!("{}-tz = {}", self.key, toml_str(zone.unwrap_or_default())),
                         hint: Some("America/New_York; empty for UTC or floating".to_owned()),
-                    },
-                ]
+                    });
+                }
+
+                lines
             }
 
             Kind::CalAddress => {
@@ -692,11 +712,14 @@ impl Field {
             }
 
             Kind::Date => {
-                if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    let tz = source
-                        .get(&format!("{}-tz", self.key))
-                        .and_then(|item| item.as_str())
-                        .filter(|value| !value.is_empty());
+                let tz = source
+                    .get(&format!("{}-tz", self.key))
+                    .and_then(|item| item.as_str())
+                    .filter(|value| !value.is_empty());
+
+                if let Some(dtm) = item.as_datetime() {
+                    lines.push(toml_date_line(self.name, dtm, tz));
+                } else if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
                     lines.push(date_line(self.name, value, tz));
                 }
             }

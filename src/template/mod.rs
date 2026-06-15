@@ -493,7 +493,7 @@ mod tests {
         // The default root is the VCALENDAR: components are [[blocks]].
         assert!(toml.contains("[[event]]"));
         assert!(toml.contains("summary = \"Team sync\""));
-        assert!(toml.contains("date-start = \"2026-06-13 14:00\""));
+        assert!(toml.contains("date-start = 2026-06-13T14:00:00"));
         assert!(toml.contains("date-start-tz = \"America/New_York\""));
         assert!(toml.contains("location = \"Room 1\""));
         assert!(toml.contains("[[event.attendee]]"));
@@ -590,7 +590,7 @@ mod tests {
         // "e.g." prefix, list enum variants lowercase, and show formats
         // (dates as a concrete example).
         assert!(!toml.contains("# required"));
-        assert!(toml.contains("# 2026-06-13 14:30"));
+        assert!(toml.contains("# 2026-06-13T14:30:00"));
         assert!(toml.contains("# display, email, audio"));
         assert!(toml.contains("# confirmed, tentative, cancelled"));
         assert!(!toml.contains("e.g."));
@@ -702,19 +702,30 @@ mod tests {
 
     #[test]
     fn apply_renders_all_day_and_utc_dates() {
-        let all_day = super::apply(SAMPLE, "[[event]]\ndate-start = \"2026-12-25\"\n").unwrap();
+        // Native TOML values: a bare date is all-day, a `Z` offset is UTC,
+        // and a local date-time with a zone key is a named zone.
+        let all_day = super::apply(SAMPLE, "[[event]]\ndate-start = 2026-12-25\n").unwrap();
         assert!(all_day.contains("DTSTART;VALUE=DATE:20261225"));
 
-        let utc =
-            super::apply(SAMPLE, "[[event]]\ndate-start = \"2026-06-13 14:00 UTC\"\n").unwrap();
+        let utc = super::apply(SAMPLE, "[[event]]\ndate-start = 2026-06-13T14:00:00Z\n").unwrap();
         assert!(utc.contains("DTSTART:20260613T140000Z"));
 
         let zoned = super::apply(
             SAMPLE,
-            "[[event]]\ndate-start = \"2026-06-13 09:30\"\ndate-start-tz = \"Europe/Paris\"\n",
+            "[[event]]\ndate-start = 2026-06-13T09:30:00\ndate-start-tz = \"Europe/Paris\"\n",
         )
         .unwrap();
         assert!(zoned.contains("DTSTART;TZID=Europe/Paris:20260613T093000"));
+
+        // A floating local date-time with no zone key stays floating.
+        let floating =
+            super::apply(SAMPLE, "[[event]]\ndate-start = 2026-06-13T09:30:00\n").unwrap();
+        assert!(floating.contains("DTSTART:20260613T093000\r\n"));
+
+        // The older friendly string form is still accepted.
+        let legacy =
+            super::apply(SAMPLE, "[[event]]\ndate-start = \"2026-06-13 14:00 UTC\"\n").unwrap();
+        assert!(legacy.contains("DTSTART:20260613T140000Z"));
     }
 
     #[test]
@@ -783,7 +794,7 @@ mod tests {
     #[test]
     fn apply_adds_a_todo() {
         let src = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n";
-        let edited = "[[todo]]\nsummary = \"Submit report\"\ndate-due = \"2026-06-20 17:00\"\n";
+        let edited = "[[todo]]\nsummary = \"Submit report\"\ndate-due = 2026-06-20T17:00:00\n";
 
         let out = super::apply(src, edited).unwrap();
 
@@ -846,13 +857,13 @@ mod tests {
     }
 
     #[test]
-    fn recurrence_until_is_friendly() {
-        // UNTIL projects as a friendly date and reassembles to digits.
+    fn recurrence_until_is_native() {
+        // UNTIL projects as a native TOML date-time and reassembles to digits.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             RRULE:FREQ=DAILY;UNTIL=20261231T235900Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let toml = super::project(&ical::parse(src).unwrap());
 
-        assert!(toml.contains("recurrence.until = \"2026-12-31 23:59 UTC\""));
+        assert!(toml.contains("recurrence.until = 2026-12-31T23:59:00Z"));
         assert_eq!(super::apply(src, &toml).unwrap(), src);
     }
 

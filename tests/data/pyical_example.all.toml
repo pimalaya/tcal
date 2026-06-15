@@ -17,10 +17,8 @@ priority = ""			# 0 = undefined, 1 = highest, 9 = lowest
 status = "CONFIRMED"		# confirmed, tentative, cancelled
 transparency = "TRANSPARENT"	# opaque, transparent
 
-date-start = "2022-01-01"	# 2026-06-13 14:30
-date-start-tz = ""		# America/New_York; empty for UTC or floating
-date-end = "2022-01-01"		# 2026-06-13 14:30
-date-end-tz = ""		# America/New_York; empty for UTC or floating
+date-start = 2022-01-01		# 2026-06-13T14:30:00
+date-end = 2022-01-01		# 2026-06-13T14:30:00
 
 duration.week = ""		# event length
 duration.day = ""
@@ -31,7 +29,7 @@ duration.sec = ""
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -74,10 +72,8 @@ priority = ""			# 0 = undefined, 1 = highest, 9 = lowest
 status = "CONFIRMED"		# confirmed, tentative, cancelled
 transparency = "TRANSPARENT"	# opaque, transparent
 
-date-start = "2022-01-07"	# 2026-06-13 14:30
-date-start-tz = ""		# America/New_York; empty for UTC or floating
-date-end = "2022-01-07"		# 2026-06-13 14:30
-date-end-tz = ""		# America/New_York; empty for UTC or floating
+date-start = 2022-01-07		# 2026-06-13T14:30:00
+date-end = 2022-01-07		# 2026-06-13T14:30:00
 
 duration.week = ""		# event length
 duration.day = ""
@@ -88,7 +84,7 @@ duration.sec = ""
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -131,10 +127,8 @@ priority = ""			# 0 = undefined, 1 = highest, 9 = lowest
 status = "CONFIRMED"		# confirmed, tentative, cancelled
 transparency = "TRANSPARENT"	# opaque, transparent
 
-date-start = "2022-03-08"	# 2026-06-13 14:30
-date-start-tz = ""		# America/New_York; empty for UTC or floating
-date-end = "2022-03-08"		# 2026-06-13 14:30
-date-end-tz = ""		# America/New_York; empty for UTC or floating
+date-start = 2022-03-08		# 2026-06-13T14:30:00
+date-end = 2022-03-08		# 2026-06-13T14:30:00
 
 duration.week = ""		# event length
 duration.day = ""
@@ -145,7 +139,7 @@ duration.sec = ""
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -188,11 +182,11 @@ priority = ""			# 0 = undefined, 1 = highest, 9 = lowest
 status = ""			# needs-action, in-process, completed, cancelled
 percent = ""			# 0 to 100
 
-date-start = ""			# 2026-06-13 14:30
+date-start = ""			# 2026-06-13T14:30:00
 date-start-tz = ""		# America/New_York; empty for UTC or floating
-date-due = ""			# 2026-06-13 14:30
+date-due = ""			# 2026-06-13T14:30:00
 date-due-tz = ""		# America/New_York; empty for UTC or floating
-date-completed = ""		# 2026-06-13 14:30
+date-completed = ""		# 2026-06-13T14:30:00
 date-completed-tz = ""		# America/New_York; empty for UTC or floating
 
 duration.week = ""		# alternative to a due date
@@ -204,7 +198,7 @@ duration.sec = ""
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -244,13 +238,13 @@ organizer = ""			# email address
 class = ""			# public, private, confidential
 status = ""			# draft, final, cancelled
 
-date-start = ""			# 2026-06-13 14:30
+date-start = ""			# 2026-06-13T14:30:00
 date-start-tz = ""		# America/New_York; empty for UTC or floating
 
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -268,9 +262,9 @@ organizer = ""		# email address
 periods = []		# 20260613T140000Z/PT1H
 url = ""
 
-date-start = ""		# 2026-06-13 14:30
+date-start = ""		# 2026-06-13T14:30:00
 date-start-tz = ""	# America/New_York; empty for UTC or floating
-date-end = ""		# 2026-06-13 14:30
+date-end = ""		# 2026-06-13T14:30:00
 date-end-tz = ""	# America/New_York; empty for UTC or floating
 
 [[free-busy.attendee]]
@@ -287,13 +281,13 @@ name = ""			# CET
 offset-from = ""		# +0200
 offset-to = ""			# +0100
 
-date-start = ""			# local start: 1996-10-27 03:00
+date-start = ""			# local start: 1996-10-27T03:00:00
 date-start-tz = ""		# America/New_York; empty for UTC or floating
 
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
@@ -305,13 +299,13 @@ name = ""			# CET
 offset-from = ""		# +0200
 offset-to = ""			# +0100
 
-date-start = ""			# local start: 1996-10-27 03:00
+date-start = ""			# local start: 1996-10-27T03:00:00
 date-start-tz = ""		# America/New_York; empty for UTC or floating
 
 recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
 recurrence.interval = ""	# every N periods
 recurrence.count = ""		# total occurrences; alternative to until
-recurrence.until = ""		# 2026-06-13 14:30
+recurrence.until = ""		# 2026-06-13T14:30:00
 recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
 recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)

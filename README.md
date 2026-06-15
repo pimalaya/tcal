@@ -1,4 +1,4 @@
-# tcal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
+# tCal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
 CLI & lib to edit [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML.
 
@@ -199,7 +199,7 @@ All of them, as `[[blocks]]`: `event`, `todo`, `journal`, `free-busy`, `timezone
 
 ### How do I write dates and times?
 
-Use `YYYY-MM-DD HH:MM` for a timed event (`2026-06-13 14:00`), `YYYY-MM-DD` alone for an all-day event, and append ` UTC` for a UTC value. For a zoned time, set the adjacent `date-start-tz` / `date-end-tz` key to an IANA zone like `Europe/Paris`; leave it empty for UTC or floating time. A raw iCalendar value (`20260613T140000`) is accepted too.
+Dates are native TOML values. Write a bare date (`2026-06-13`) for an all-day event, a local date-time (`2026-06-13T14:00:00`) for a timed one, and a `Z` offset (`2026-06-13T14:00:00Z`) for a UTC value. For a zoned time, keep the local date-time and set the adjacent `date-start-tz` / `date-end-tz` key to an IANA zone like `Europe/Paris`; that key only appears for a named zone (UTC and floating times need none). The older `YYYY-MM-DD HH:MM[ UTC]` string form is still accepted too.
 
 ### How does `tcal edit` pick the editor?
 

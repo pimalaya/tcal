@@ -1,12 +1,157 @@
-//! Friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` date-times to and from
-//! iCalendar digit forms.
+//! Date conversions between calcard's [`PartialDateTime`], native TOML
+//! date-times, and iCalendar digit forms. Projection emits a native TOML
+//! `date`/`datetime`; apply reads one back, and still accepts the older
+//! friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` string form.
 
-use alloc::{borrow::ToOwned, format, string::String};
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+};
 
 use calcard::common::PartialDateTime;
+use toml_edit::{Date, Datetime, Offset, Time};
 
-/// Shared hint for the friendly date keys: a concrete example date-time.
-pub const DATE_HINT: &str = "2026-06-13 14:30";
+/// Shared hint for the date keys: a concrete example native TOML date-time.
+pub const DATE_HINT: &str = "2026-06-13T14:30:00";
+
+/// Whether a calcard date-time carries an explicit UTC marker (a trailing
+/// `Z`), which calcard encodes as a zero numeric offset.
+pub fn is_utc(dt: &PartialDateTime) -> bool {
+    matches!((dt.tz_hour, dt.tz_minute), (Some(0), Some(0)))
+}
+
+/// Build a native TOML value from a calcard date-time, or `None` when it is
+/// partial (a yearless or year-only date) and so has no native TOML form.
+/// An all-day value becomes a local date, a UTC value an offset date-time,
+/// anything else a local date-time; a named zone is carried separately, not
+/// folded into the value.
+pub fn toml_date(dt: &PartialDateTime) -> Option<Datetime> {
+    let date = Date {
+        year: dt.year?,
+        month: dt.month?,
+        day: dt.day?,
+    };
+
+    let Some((hour, minute)) = dt.hour.zip(dt.minute) else {
+        return Some(Datetime {
+            date: Some(date),
+            time: None,
+            offset: None,
+        });
+    };
+
+    let time = Time {
+        hour,
+        minute,
+        second: Some(dt.second.unwrap_or(0)),
+        nanosecond: None,
+    };
+
+    Some(Datetime {
+        date: Some(date),
+        time: Some(time),
+        offset: is_utc(dt).then_some(Offset::Z),
+    })
+}
+
+/// Build an iCalendar date line from a native TOML date-time and optional
+/// named zone: a bare date becomes a `VALUE=DATE` property, a UTC value
+/// keeps its `Z`, and a named zone becomes a `TZID` parameter. A numeric
+/// offset other than `Z` is treated as floating, as iCalendar has no
+/// offset date-time form.
+pub fn toml_date_line(name: &str, dtm: &Datetime, tz: Option<&str>) -> String {
+    let Some(date) = dtm.date else {
+        return format!("{name}:{dtm}");
+    };
+    let date = format!("{:04}{:02}{:02}", date.year, date.month, date.day);
+
+    let Some(time) = dtm.time else {
+        return format!("{name};VALUE=DATE:{date}");
+    };
+    let time = format!(
+        "{:02}{:02}{:02}",
+        time.hour,
+        time.minute,
+        time.second.unwrap_or(0)
+    );
+
+    match dtm.offset {
+        Some(Offset::Z) => format!("{name}:{date}T{time}Z"),
+        _ => match tz {
+            Some(zone) => format!("{name};TZID={zone}:{date}T{time}"),
+            None => format!("{name}:{date}T{time}"),
+        },
+    }
+}
+
+/// Parse an `RRULE` `UNTIL` digit value (`20261231T235900Z`) into a native
+/// TOML date-time, or `None` when it is not in the expected digit form.
+pub fn until_to_toml(raw: &str) -> Option<Datetime> {
+    let raw = raw.trim();
+    let (body, utc) = match raw.strip_suffix('Z') {
+        Some(body) => (body, true),
+        None => (raw, false),
+    };
+    let (date, time) = match body.split_once('T') {
+        Some((date, time)) => (date, Some(time)),
+        None => (body, None),
+    };
+
+    if date.len() != 8 || !date.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let date = Date {
+        year: date[0..4].parse().ok()?,
+        month: date[4..6].parse().ok()?,
+        day: date[6..8].parse().ok()?,
+    };
+
+    let Some(time) = time else {
+        return Some(Datetime {
+            date: Some(date),
+            time: None,
+            offset: None,
+        });
+    };
+    if time.len() < 6 || !time.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let time = Time {
+        hour: time[0..2].parse().ok()?,
+        minute: time[2..4].parse().ok()?,
+        second: Some(time[4..6].parse().ok()?),
+        nanosecond: None,
+    };
+
+    Some(Datetime {
+        date: Some(date),
+        time: Some(time),
+        offset: utc.then_some(Offset::Z),
+    })
+}
+
+/// Render a native TOML date-time back to an `RRULE` `UNTIL` digit value.
+pub fn until_to_ical(dtm: &Datetime) -> String {
+    let Some(date) = dtm.date else {
+        return dtm.to_string();
+    };
+    let mut out = format!("{:04}{:02}{:02}", date.year, date.month, date.day);
+
+    if let Some(time) = dtm.time {
+        out.push_str(&format!(
+            "T{:02}{:02}{:02}",
+            time.hour,
+            time.minute,
+            time.second.unwrap_or(0)
+        ));
+        if matches!(dtm.offset, Some(Offset::Z)) {
+            out.push('Z');
+        }
+    }
+
+    out
+}
 
 /// Build an iCalendar date line from a friendly value and optional time
 /// zone, passing the value verbatim when it is not in the friendly form.
@@ -107,40 +252,6 @@ pub fn offset_text(dt: &PartialDateTime) -> String {
     let sign = if dt.tz_minus { '-' } else { '+' };
 
     format!("{sign}{hour:02}{minute:02}")
-}
-
-/// Render an `RRULE` `UNTIL` value (`20261231T000000Z`) as a friendly
-/// `YYYY-MM-DD [HH:MM[:SS]] [UTC]`, passing it through verbatim when it is
-/// not in the expected digit form.
-pub fn ical_to_friendly(raw: &str) -> String {
-    let raw = raw.trim();
-    let (body, utc) = match raw.strip_suffix('Z') {
-        Some(body) => (body, true),
-        None => (raw, false),
-    };
-    let (date, time) = match body.split_once('T') {
-        Some((date, time)) => (date, Some(time)),
-        None => (body, None),
-    };
-
-    if date.len() != 8 || !date.bytes().all(|byte| byte.is_ascii_digit()) {
-        return raw.to_owned();
-    }
-    let mut out = format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]);
-
-    if let Some(time) =
-        time.filter(|time| time.len() >= 4 && time.bytes().all(|byte| byte.is_ascii_digit()))
-    {
-        out.push_str(&format!(" {}:{}", &time[0..2], &time[2..4]));
-        if time.len() >= 6 && &time[4..6] != "00" {
-            out.push_str(&format!(":{}", &time[4..6]));
-        }
-        if utc {
-            out.push_str(" UTC");
-        }
-    }
-
-    out
 }
 
 /// Convert a friendly date back to the `RRULE` `UNTIL` digit form, passing

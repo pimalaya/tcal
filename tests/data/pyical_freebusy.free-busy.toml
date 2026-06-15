@@ -8,10 +8,8 @@ organizer = ""										# email address
 periods = ["20250101T100000Z/20250101T120000Z", "20250101T140000Z/20250101T160000Z"]	# 20260613T140000Z/PT1H
 url = ""
 
-date-start = "2025-01-01 00:00 UTC"							# 2026-06-13 14:30
-date-start-tz = ""									# America/New_York; empty for UTC or floating
-date-end = "2025-01-02 00:00 UTC"							# 2026-06-13 14:30
-date-end-tz = ""									# America/New_York; empty for UTC or floating
+date-start = 2025-01-01T00:00:00Z							# 2026-06-13T14:30:00
+date-end = 2025-01-02T00:00:00Z								# 2026-06-13T14:30:00
 
 [[attendee]]
 display-name = ""

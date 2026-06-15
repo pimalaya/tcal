@@ -13,7 +13,7 @@ use calcard::icalendar::ICalendarEntry;
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{friendly_to_ical, ical_to_friendly},
+    datetime::{friendly_to_ical, until_to_ical, until_to_toml},
     line::{Line, int_line},
     util::{scalar_text, table_int, table_text, toml_array, toml_int_array, toml_str},
 };
@@ -77,11 +77,8 @@ pub fn recur_lines(entry: Option<&ICalendarEntry>, prefix: &str) -> Vec<Line> {
             Some("total occurrences; alternative to until"),
         ),
         Line {
-            lhs: format!(
-                "{prefix}.until = {}",
-                toml_str(&get("UNTIL").map(ical_to_friendly).unwrap_or_default())
-            ),
-            hint: Some("2026-06-13 14:30".to_owned()),
+            lhs: format!("{prefix}.until = {}", until_line(get("UNTIL"))),
+            hint: Some("2026-06-13T14:30:00".to_owned()),
         },
         str_list_line(
             &format!("{prefix}.by-day"),
@@ -120,8 +117,12 @@ pub fn recur_rule(table: &dyn TableLike) -> Option<String> {
     let freq = table_text(table, "frequency")?;
     let mut parts = vec![format!("FREQ={}", freq.to_uppercase())];
 
-    if let Some(until) = table_text(table, "until") {
-        parts.push(format!("UNTIL={}", friendly_to_ical(&until)));
+    if let Some(item) = table.get("until") {
+        if let Some(dtm) = item.as_datetime() {
+            parts.push(format!("UNTIL={}", until_to_ical(dtm)));
+        } else if let Some(raw) = item.as_str().filter(|value| !value.is_empty()) {
+            parts.push(format!("UNTIL={}", friendly_to_ical(raw)));
+        }
     }
     if let Some(count) = table_int(table, "count") {
         parts.push(format!("COUNT={count}"));
@@ -159,6 +160,15 @@ fn parse_rrule(rule: &str) -> Vec<(String, String)> {
         .filter_map(|part| part.split_once('='))
         .map(|(name, value)| (name.to_uppercase(), value.to_owned()))
         .collect()
+}
+
+/// The `until` right-hand side: a native TOML date-time when the value is
+/// in iCalendar digit form, else a quoted string (empty when absent).
+fn until_line(raw: Option<&str>) -> String {
+    match raw.and_then(until_to_toml) {
+        Some(dtm) => dtm.to_string(),
+        None => toml_str(raw.unwrap_or_default()),
+    }
 }
 
 /// A recurrence string-list key (e.g. `by-day`), lowercased for display.
