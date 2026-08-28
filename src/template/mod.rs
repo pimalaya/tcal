@@ -11,10 +11,10 @@
 
 mod datetime;
 mod duration;
-mod line;
-mod model;
+pub(crate) mod line;
+pub(crate) mod model;
 mod recurrence;
-mod util;
+pub(crate) mod util;
 
 use alloc::{
     borrow::ToOwned,
@@ -264,6 +264,15 @@ fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&ICalendarE
         hint: None,
     });
 
+    lines.extend(attendee_keys(entry));
+}
+
+/// The keys of one attendee block, without its `[[header]]` line: what a
+/// merge writes when two sides contest one attendee, since repeating the
+/// header would make a second attendee rather than a duplicate key.
+pub(crate) fn attendee_keys(entry: Option<&ICalendarEntry>) -> Vec<Line> {
+    let mut lines = Vec::new();
+
     let display_name = entry
         .and_then(|entry| param(entry, &ICalendarParameterName::Cn))
         .unwrap_or_default();
@@ -296,11 +305,13 @@ fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&ICalendarE
         lhs: format!("status = {}", toml_str(&status)),
         hint: Some("needs-action, accepted, declined, tentative, delegated".to_owned()),
     });
+
+    lines
 }
 
 /// The top-level components of an iCalendar (the `VCALENDAR`'s children),
 /// or the lone component of a bare stream.
-fn top_level(ical: &ICalendar) -> Vec<&ICalendarComponent> {
+pub(crate) fn top_level(ical: &ICalendar) -> Vec<&ICalendarComponent> {
     let Some(root) = ical.components.first() else {
         return Vec::new();
     };
@@ -317,7 +328,7 @@ fn top_level(ical: &ICalendar) -> Vec<&ICalendarComponent> {
 
 /// The entries of a component matching a field's name (empty when the
 /// component is absent, for example blocks).
-fn entries_for<'a>(
+pub(crate) fn entries_for<'a>(
     component: Option<&'a ICalendarComponent>,
     field: &Field,
 ) -> Vec<&'a ICalendarEntry> {
@@ -333,7 +344,7 @@ fn entries_for<'a>(
 }
 
 /// The child components of `component` matching a child spec's type.
-fn child_components<'a>(
+pub(crate) fn child_components<'a>(
     ical: &'a ICalendar,
     component: Option<&ICalendarComponent>,
     child: &Spec,

@@ -8,8 +8,8 @@ If a statement here conflicts with the code, the code wins; please flag it.
 
 tcal is a **dual library/CLI** crate (org ARCHITECTURE section 4), but a small and unusual one: it does **no I/O of its own and has no protocol or storage logic**, so it has no coroutines and no `client` layer. It is a pure, total function over strings: iCalendar text in, TOML text out, and back. The two layers are therefore:
 
-1. **`no_std` core** (no features): the projection between an iCalendar and an ergonomic TOML buffer (`ical`, `template`, `edit`, `error`).
-2. **CLI** (`cli` feature): the binary and its two verbs, plus the `$EDITOR` integration and `std`.
+1. **`no_std` core** (no features): the projection between an iCalendar and an ergonomic TOML buffer (`ical`, `template`, `edit`, `error`), plus the three-way merge over it (`merge`) behind the opt-in `merge` feature, which is the only thing that links a second iCalendar library.
+2. **CLI** (`cli` feature): the binary and its three verbs, plus the `$EDITOR` integration and `std`.
 
 The "sans-I/O" principle still holds, trivially: the core never touches the filesystem, clock or network. The CLI is the only place that reads files, the clock (for `DTSTAMP`) and `$EDITOR`.
 
@@ -44,6 +44,14 @@ What tcal projects is described by static tables in `template/model.rs`:
 
 The key guarantee: `apply` only reconciles the selected types, so a filtered edit never drops the unselected components. Editing a `VEVENT` with `--todo` adds a to-do beside the untouched event.
 
+## The merge bridge
+
+`merge.rs` is the one place where a second iCalendar library is linked: the three-way merge lives in [ical-rs](https://crates.io/crates/ical-rs), over a byte-faithful syntax tree of its own. The bridge is deliberately narrow. `Merge::project` parses the three sides with ical-rs, runs `IcalMerge`, serialises the merged tree back to iCalendar text, and from there everything is the usual calcard path: that text is the source the projection reads and the source `apply` patches, so the merge adds no second writer and no second model.
+
+The merge report is used for two things only. Its conflicts are addressed onto projected keys, by walking the merged calcard calendar along the merge's component path (`UID`, then `RECURRENCE-ID`, then position among same-named siblings) to a `Spec` and a `Field`. Each side's spelling of a contested field is then rendered by the same `Field::lines` the projection uses, so a choice and the document around it are written by one code path.
+
+The local side is the merge's right side: the edited one, whose changes are replayed and on whose behalf `--speaks-for` claims authority. A collision the merge cannot settle therefore holds the remote value in the merged bytes, and the document asks rather than assumes.
+
 ## Module layout
 
 ```
@@ -51,7 +59,8 @@ src/
   lib.rs                 no_std setup, module + feature wiring
   error.rs               TcalError + Result
   ical.rs                calcard parse adapter (text -> ICalendar)
-  cli.rs                 [cli] binary: Cli/Command, template & edit verbs
+  merge.rs               [merge] three-way merge projected as a document to decide
+  cli.rs                 [cli] binary: Cli/Command, template, edit & merge verbs
   template.rs            projection/apply engine + facade + unit tests
   template/
     model.rs             Kind, Field, Spec, the static field tables, TOP_LEVEL

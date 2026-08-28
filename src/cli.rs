@@ -1,9 +1,12 @@
-//! The `tcal` binary: two verbs over the [`crate::template`] projection.
+//! The `tcal` binary: three verbs over the [`crate::template`] projection.
 //!
 //! - `template [SOURCE]`: print the TOML scaffold, blank or prefilled from an
 //!   iCalendar. Always emits TOML.
 //! - `edit [SOURCE]`: project, open `$EDITOR`, apply the edits back onto the
 //!   source, and emit the resulting iCalendar. Always emits an iCalendar.
+//! - `merge BASE LOCAL REMOTE OUTPUT`: merge two divergent calendars against
+//!   their base ([`crate::merge`]), edit the result, and write it out once it
+//!   is decided.
 //!
 //! `SOURCE` resolves deterministically: `-` reads stdin, an existing file is
 //! read, otherwise the value is treated as literal iCalendar contents, and
@@ -33,7 +36,12 @@ use pimalaya_cli::{
 };
 use uuid::Uuid;
 
-use crate::{error::TcalError, ical, template};
+use crate::{
+    error::{self, TcalError},
+    ical,
+    merge::Merge,
+    template,
+};
 
 /// Root CLI parser.
 #[derive(Parser, Debug)]
@@ -57,9 +65,12 @@ pub enum Command {
     #[command(visible_alias = "tpl")]
     Template(TemplateCommand),
     Edit(EditCommand),
+    Merge(MergeCommand),
 
-    Completions(CompletionCommand),
-    Manuals(ManualCommand),
+    #[command(alias = "completions")]
+    Completion(CompletionCommand),
+    #[command(alias = "manuals")]
+    Manual(ManualCommand),
 }
 
 impl Command {
@@ -67,8 +78,9 @@ impl Command {
         match self {
             Self::Template(cmd) => cmd.execute(printer),
             Self::Edit(cmd) => cmd.execute(printer),
-            Self::Completions(cmd) => cmd.execute(printer, Cli::command()),
-            Self::Manuals(cmd) => cmd.execute(printer, Cli::command()),
+            Self::Merge(cmd) => cmd.execute(printer),
+            Self::Completion(cmd) => cmd.execute(printer, Cli::command()),
+            Self::Manual(cmd) => cmd.execute(printer, Cli::command()),
         }
     }
 }
@@ -156,32 +168,102 @@ impl EditCommand {
         let types = self.components.selected();
         let toml = template::project_with(&ical, &types)?;
 
-        let mut builder = edit::Builder::new();
-        builder.suffix(".toml");
-
-        let mut edited = edit::edit_with_builder(&toml, &builder).context("Cannot spawn editor")?;
-
-        // A broken edit is recoverable: re-open the editor seeded with the
-        // user's own buffer so the edits are never lost. JSON output is
-        // non-interactive, so the error just propagates there.
-        let out = loop {
-            match template::apply_with(&src, &edited, &types) {
-                Ok(out) => break out,
-                Err(TcalError::ParseToml(err)) if !printer.is_json() => {
-                    let message = format!("Cannot parse TOML buffer:\n\n{err}\nRe-edit to fix it?");
-                    if !prompt::bool(message, true)? {
-                        return Err(TcalError::ParseToml(err).into());
-                    }
-                    edited = edit::edit_with_builder(&edited, &builder)
-                        .context("Cannot spawn editor")?;
-                }
-                Err(err) => return Err(err.into()),
-            }
-        };
+        let out = edit_until_applied(printer, &toml, |edited| {
+            template::apply_with(&src, edited, &types)
+        })?;
 
         let target = self.output.or_else(|| self.source.file_path());
         write_out(target.as_deref(), out.as_bytes())
     }
+}
+
+/// Merge two divergent calendars against their base and edit the result.
+///
+/// Collisions the merge could not settle are written as the same key once
+/// per side, which TOML refuses: decide each one by keeping a single line.
+/// The output is written only once the edited document parses.
+#[derive(Debug, Parser)]
+pub struct MergeCommand {
+    /// The common ancestor both sides were derived from.
+    #[arg(value_name = "BASE", value_parser = path_parser)]
+    pub base: PathBuf,
+    /// The edited side, whose changes are replayed onto the remote one.
+    #[arg(value_name = "LOCAL", value_parser = path_parser)]
+    pub local: PathBuf,
+    /// The other side.
+    #[arg(value_name = "REMOTE", value_parser = path_parser)]
+    pub remote: PathBuf,
+    /// Where to write the resolved calendar.
+    #[arg(value_name = "OUTPUT", value_parser = path_parser)]
+    pub output: PathBuf,
+    /// The calendar address the local side edits as, so a change to a
+    /// meeting someone else organises can be refused (RFC 5546 3.2).
+    #[arg(long, value_name = "ADDRESS")]
+    pub speaks_for: Option<String>,
+}
+
+impl MergeCommand {
+    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
+        let base = read_calendar(&self.base)?;
+        let local = read_calendar(&self.local)?;
+        let remote = read_calendar(&self.remote)?;
+
+        let merged = Merge {
+            base: &base,
+            local: &local,
+            remote: &remote,
+            speaks_for: self.speaks_for.as_deref(),
+        }
+        .project()?;
+
+        let out = edit_until_applied(printer, &merged.toml, |edited| merged.apply(edited))?;
+
+        // The output is written only here, so a document left undecided or an
+        // editor left unanswered leaves it as it was.
+        write_out(Some(&self.output), out.as_bytes())
+    }
+}
+
+/// Open the editor on a projected buffer and fold the result back, re-opening
+/// the user's own buffer when it comes back unusable so the edits are never
+/// lost. JSON output is non-interactive, so the error propagates there.
+fn edit_until_applied(
+    printer: &impl Printer,
+    toml: &str,
+    apply: impl Fn(&str) -> error::Result<String>,
+) -> Result<String> {
+    let mut builder = edit::Builder::new();
+    builder.suffix(".toml");
+
+    let mut edited = edit::edit_with_builder(toml, &builder).context("Cannot spawn editor")?;
+
+    loop {
+        let err = match apply(&edited) {
+            Ok(out) => return Ok(out),
+            Err(err) => err,
+        };
+
+        let message = match &err {
+            TcalError::ParseToml(err) if !printer.is_json() => {
+                format!("Cannot parse TOML buffer:\n\n{err}\nRe-edit to fix it?")
+            }
+            TcalError::Undecided(key) if !printer.is_json() => format!(
+                "Property {key} is left undecided.\n\nKeep one of its lines and delete the others. Re-edit to decide it?"
+            ),
+            _ => return Err(err.into()),
+        };
+
+        if !prompt::bool(message, true)? {
+            return Err(err.into());
+        }
+
+        edited = edit::edit_with_builder(&edited, &builder).context("Cannot spawn editor")?;
+    }
+}
+
+/// Read one of a merge's calendars from a path.
+fn read_calendar(path: &Path) -> Result<String> {
+    fs::read_to_string(path).with_context(|| format!("Cannot read iCalendar {path:?}"))
 }
 
 /// Positional iCalendar source shared by both verbs.

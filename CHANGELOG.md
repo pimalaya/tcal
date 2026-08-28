@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a `merge` verb, and the `merge` module behind it: a three-way merge projected as a TOML document to decide.
+
+  The module sits behind a new opt-in `merge` cargo feature, the only one that links a second iCalendar library ([ical-rs](https://crates.io/crates/ical-rs), narrowed to its `parser` feature); the `cli` feature pulls it in, so the binary is unaffected. `tcal merge BASE LOCAL REMOTE OUTPUT` runs the ical-rs three-way merge in process, projects the merged calendar, opens `$EDITOR`, and writes the output path only once the edited document parses. A property both sides changed is written once per side, each line naming its side, with the ancestor commented above them: TOML forbids duplicate keys, so an undecided document cannot be applied, and the refusal names the property left undecided rather than reporting a syntax error. Deciding it is deleting the lines that are not wanted. What the merge settled on its own becomes a header comment instead of a choice: a removal against an update, a recurrence rule against an overriding instance, and a change refused for want of organiser authority. A collision inside an alarm or an attendee decomposes into per-key duplicates within the single table that projects it, never a repeated array-of-tables header, which would silently make a second alarm rather than an error. `--speaks-for ADDRESS` gives the merge the calendar address the local side edits as (RFC 5546 section 3.2); without it nothing is claimed and nothing is refused on that ground.
+
 - Offered to re-edit on a broken `edit` buffer instead of discarding it.
 
   When the edited TOML fails to parse, `edit` now shows the parse error and prompts to re-open `$EDITOR` seeded with the user's own buffer, looping until it parses or the user declines. JSON output stays non-interactive: the error just propagates.

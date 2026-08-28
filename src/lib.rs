@@ -11,4 +11,6 @@ pub mod cli;
 pub mod edit;
 pub mod error;
 pub mod ical;
+#[cfg(feature = "merge")]
+pub mod merge;
 pub mod template;
