@@ -1,6 +1,6 @@
 # tCal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
 
-CLI & lib to edit [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML.
+CLI to edit [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML
 
 ```sh
 $ tcal edit --event

@@ -49,12 +49,49 @@
 //! That is why applying needs the original text and not just the document:
 //! the TOML is an editing affordance, never an interchange format.
 //!
+//! ## The modelled vocabulary
+//!
+//! Static tables in model name every component and property the form shows. A
+//! spec is one component type, carrying its fields and its children: the top
+//! level lists event, todo, journal, free-busy and timezone, and the children
+//! are alarms and the timezone's standard and daylight rules.
+//!
+//! A field decouples the friendly TOML key from the iCalendar property behind
+//! it, so `date-start` can read well without `DTSTART` moving, and carries the
+//! inline hint and the kind that drives both directions.
+//!
+//! A kind is one of nine. Beyond the plain scalar, number and list there are
+//! an enum whose variants are lowercase in hints and uppercased on export, a
+//! date carrying an adjacent timezone key, a calendar address that strips and
+//! restores `mailto:`, a UTC offset, and an attendee section.
+//!
+//! Recurrence and duration are the two that expand into dotted keys, each
+//! with a raw escape hatch for a value tcal cannot break apart. `UID` and
+//! `DTSTAMP` are deliberately absent, being app-managed: seeded for a new
+//! event and preserved for every other one.
+//!
 //! ## The merge
 //!
 //! [`merge::Merge`] reconciles a local and a remote calendar against the base
 //! they both came from, then renders the outcome through the same projection,
-//! so a merge is read and edited in the form everything else is. The local
-//! side is the replayed one, and the preferred one where nothing settles it.
+//! so a merge is read and edited in the form everything else is.
+//!
+//! The report is used for two things only. Its conflicts are addressed onto
+//! projected keys by walking the merged calendar along the merge's component
+//! path, `UID` then `RECURRENCE-ID` then position among same-named siblings,
+//! down to a spec, a field and then the property itself.
+//!
+//! That last step goes by the identity the report carries, an attendee's
+//! calendar address, rather than by a position either side's own removal
+//! moves. Each side's spelling of a contested field is rendered by the same
+//! field code the projection uses, so a choice and the document around it are
+//! written by one path.
+//!
+//! The local side is the merge's right side, the replayed one, on whose
+//! behalf `--speaks-for` claims authority, and it is also the preferred one.
+//! Being replayed is what makes it judgeable; being preferred is what stops
+//! that judgement costing it every collision, which is the same value tcard
+//! keeps by putting local on the left.
 //!
 //! What the merge settled by itself is said in a comment at the head of that
 //! document. What it could not settle is written once per side, each line
@@ -83,6 +120,35 @@
 //! The `cli` feature adds the cli module: the three verbs, how each resolves
 //! its source, and the editor round trip. The binary above it is wiring only,
 //! and says so in its own header.
+//!
+//! ## The golden fixture database
+//!
+//! The tests/data directory is a regression database of real and crafted
+//! calendars, checked by tests/fixtures.rs. Each `<name>.<mode>.toml` is the
+//! expected projection of `<name>.ics` for that mode, which is either `all`
+//! or the `_`-joined type keys the projection was narrowed to.
+//!
+//! The runner asserts that projection for every fixture, and a byte-exact
+//! round trip unless a `<name>.lossy` marker says the source is not already
+//! in the form the projection writes back. A real-world export is the most
+//! valuable case, so adding one is the fastest way to turn a bug report into
+//! a regression test; CONTRIBUTING.md carries the steps.
+//!
+//! ## Known limitations
+//!
+//! These are deliberate or pending, and they are what the lossy markers
+//! record. A recurrence rule is written back with its tokens in one order, so
+//! a rule written in another order round trips canonicalised rather than
+//! byte-exact.
+//!
+//! An all-day date written without its parameter is re-emitted with the
+//! parameter RFC 5545 asks for, so `DTSTART:20220101` comes back
+//! `DTSTART;VALUE=DATE:20220101`.
+//!
+//! Only an attendee's common name, role and participation status are
+//! modelled, so only those can be edited and the rest are kept on the line as
+//! they were. The parameters of a categories or free-busy list are not
+//! modelled either, and are likewise kept rather than editable.
 
 extern crate alloc;
 #[cfg(feature = "cli")]
