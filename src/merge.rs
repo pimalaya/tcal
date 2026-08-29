@@ -1,3 +1,5 @@
+//! # Merge
+//!
 //! Three-way merge, projected as a TOML document to decide.
 //!
 //! [`Merge`] runs the ical-rs three-way merge over a base calendar and two
@@ -22,6 +24,11 @@
 //! Where the two sides spell every line the same, the difference is in
 //! something the projection never shows, and the collision becomes a comment
 //! like any other it cannot address.
+//!
+//! A list both sides edited is said there too. Its items merge as a set, which
+//! is right for a value RFC 5545 gives no order to, so there is nothing to
+//! choose; but the merged value is one neither side wrote, and a reader who is
+//! not told cannot review it.
 
 use alloc::{
     borrow::{Cow, ToOwned},
@@ -31,9 +38,9 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::{ICalendar, ICalendarComponent, ICalendarComponentType};
 use ical::tree::{
     cst::IcalCst,
+    line::IcalLine,
     merge::{
         IcalComponentPath, IcalMerge, IcalMergeAction, IcalMergeReason, IcalMergeSide, IcalPropPath,
     },
@@ -42,12 +49,12 @@ use toml_edit::TomlError;
 
 use crate::{
     error::{Result, TcalError},
-    ical::parse,
+    ical::{Calendar, named, props},
     template::{
         self, attendee_keys, child_components, entries_for,
         model::{Field, Kind, Spec, TOP_LEVEL},
         top_level,
-        util::{ensure_mailto, entry_text, value_text},
+        util::{ensure_mailto, strip_mailto, text},
     },
 };
 
@@ -88,11 +95,14 @@ impl Merge<'_> {
 
         let ical = report.merged.to_string();
 
+        // The merged calendar is projected as the merge left it, rather than
+        // written out and read back: what the reader decides is what the
+        // reconciliation actually produced.
         let sides = Sides {
-            merged: parse(&ical)?,
-            base: parse(self.base)?,
-            local: parse(self.local)?,
-            remote: parse(self.remote)?,
+            merged: Calendar::from(report.merged),
+            base: Calendar::from(base),
+            local: Calendar::from(local),
+            remote: Calendar::from(remote),
         };
 
         let mut notes = Vec::new();
@@ -104,6 +114,8 @@ impl Merge<'_> {
                 Reading::Choice(choice) => choices.push(choice),
             }
         }
+
+        sides.note_unions(&mut notes, &report.right, &report.left);
 
         let toml = decorate(&template::project(&sides.merged), &notes, &choices);
 
@@ -137,18 +149,18 @@ impl Merged {
 
 /// The three calendars a merge read, plus the one it produced, each parsed the
 /// way the projection reads them.
-struct Sides {
+struct Sides<'a> {
     /// The merged calendar, the one the document projects.
-    merged: ICalendar,
+    merged: Calendar<'a>,
     /// The common ancestor, whose value a choice comments above the others.
-    base: ICalendar,
+    base: Calendar<'a>,
     /// The edited side.
-    local: ICalendar,
+    local: Calendar<'a>,
     /// The other side.
-    remote: ICalendar,
+    remote: Calendar<'a>,
 }
 
-impl Sides {
+impl Sides<'_> {
     /// What one conflict becomes in the document: a choice when both sides
     /// wrote a value and only a reader can pick, a comment when the merge
     /// already decided.
@@ -171,12 +183,18 @@ impl Sides {
 
             IcalMergeReason::Divergent(_) => match self.choice(local) {
                 Some(choice) => Reading::Choice(choice),
-                None => Reading::Note(format!(
-                    "{}: changed on both sides, and the local value was kept.",
-                    self.name(local)
-                )),
+                None => Reading::Note(self.kept(local)),
             },
         }
+    }
+
+    /// The comment for a collision the document cannot put to a reader, which
+    /// the merge settled by preferring the local side.
+    fn kept(&self, local: &IcalMergeAction<'_>) -> String {
+        format!(
+            "{}: changed on both sides, and the local value was kept.",
+            self.name(local)
+        )
     }
 
     /// The comment for a collision where at least one side took something
@@ -211,6 +229,45 @@ impl Sides {
         format!("{name}: removed on {gone} and updated on {kept}, and the update was kept.")
     }
 
+    /// Say in the header every list both sides edited, since the merge keeps
+    /// the items of both and reports no conflict for them.
+    ///
+    /// Merging items as a set is right for a value RFC 5545 gives no order to:
+    /// two sides each adding a category should keep both, and asking a reader
+    /// to choose between them would be wrong. Saying nothing is what is wrong,
+    /// since the merged value is then one neither side wrote and nobody was
+    /// told.
+    fn note_unions(
+        &self,
+        notes: &mut Vec<String>,
+        local: &[IcalMergeAction<'_>],
+        remote: &[IcalMergeAction<'_>],
+    ) {
+        for action in local {
+            let Some(at) = edited_items(action) else {
+                continue;
+            };
+
+            let both = remote
+                .iter()
+                .filter_map(edited_items)
+                .any(|other| other == at);
+
+            if !both {
+                continue;
+            }
+
+            let note = format!(
+                "{}: both sides changed its list; the items of both were kept.",
+                self.name(action)
+            );
+
+            if !notes.contains(&note) {
+                notes.push(note);
+            }
+        }
+    }
+
     /// The choice a collision offers, when it lands on a property the
     /// projection writes as a key of its own.
     fn choice(&self, local: &IcalMergeAction<'_>) -> Option<Choice> {
@@ -222,12 +279,14 @@ impl Sides {
         // repeating its header would make a second attendee instead of a
         // duplicate key, so the contest goes inside the one table it wrote.
         let choice = if matches!(field.kind, Kind::Attendee) {
+            let entries = entries_for(Some(found.component), field);
             let mut address = found.address;
-            address.push((field.key, at.index));
+            address.push((field.key, index_of(&entries, at)?));
 
             Choice {
                 at: address,
                 key: None,
+                kept: self.kept(local),
                 base: attendee_lines(&self.base, at, field),
                 local: attendee_lines(&self.local, at, field),
                 remote: attendee_lines(&self.remote, at, field),
@@ -236,6 +295,7 @@ impl Sides {
             Choice {
                 at: found.address,
                 key: Some(field.key),
+                kept: self.kept(local),
                 base: field_lines(&self.base, at, field),
                 local: field_lines(&self.local, at, field),
                 remote: field_lines(&self.remote, at, field),
@@ -302,6 +362,9 @@ struct Choice {
     /// The field key whose lines are contested, or every key of the block for
     /// an attendee, which the projection writes as a table of its own.
     key: Option<&'static str>,
+    /// The comment this becomes where the document holds no line to contest,
+    /// so that a collision with nowhere to go is still said.
+    kept: String,
     /// The ancestor's lines, commented above the choice.
     base: Vec<String>,
     /// The local side's lines.
@@ -407,9 +470,9 @@ fn line_for<'l>(lines: &'l [String], key: &str) -> Option<&'l str> {
 
 /// One component found in one calendar: the component itself, the spec that
 /// projects it, and the address of the block it projects to.
-struct Located<'i> {
+struct Located<'i, 'a> {
     /// The component.
-    component: &'i ICalendarComponent,
+    component: &'i IcalCst<'a>,
     /// The spec that projects it.
     spec: &'static Spec,
     /// The address of its block, one step per array of tables.
@@ -424,27 +487,32 @@ fn read<'a>(text: &'a str, side: &'static str) -> Result<IcalCst<'a>> {
     })
 }
 
-/// Write the notes into the document header and the choices over the lines
-/// they contest.
+/// Write the choices over the lines they contest, then the notes into the
+/// document header.
+///
+/// The body is written first so the header can announce the contests the
+/// document holds rather than the ones the merge reported: a choice the body
+/// found no line for falls back to the note it would have been.
 fn decorate(toml: &str, notes: &[String], choices: &[Choice]) -> String {
-    let mut out = String::new();
+    let mut header = String::new();
+    let mut body = String::new();
     let mut here: Vec<(&str, usize)> = Vec::new();
     let mut counts: Vec<(&str, usize)> = Vec::new();
     let mut written = vec![false; choices.len()];
-    let mut headed = false;
 
     for line in toml.lines() {
-        // The notes go under the projection's own header, which is every
-        // comment line the document opens with.
-        if !headed && !line.starts_with('#') {
-            preamble(&mut out, notes, choices);
-            headed = true;
+        // The projection's own header is every comment line the document
+        // opens with, and the notes go under it.
+        if body.is_empty() && line.starts_with('#') {
+            header.push_str(line);
+            header.push('\n');
+            continue;
         }
 
-        if let Some(header) = block_header(line) {
-            open(&mut here, &mut counts, header);
-            out.push_str(line);
-            out.push('\n');
+        if let Some(block) = block_header(line) {
+            open(&mut here, &mut counts, block);
+            body.push_str(line);
+            body.push('\n');
             continue;
         }
 
@@ -454,46 +522,60 @@ fn decorate(toml: &str, notes: &[String], choices: &[Choice]) -> String {
 
         match contested {
             Some(at) if !written[at] => {
-                choices[at].render(&mut out);
+                choices[at].render(&mut body);
                 written[at] = true;
             }
             // NOTE: A choice writes every side's lines at once, so the lines
             // it replaces are dropped rather than written again.
             Some(_) => {}
             None => {
-                out.push_str(line);
-                out.push('\n');
+                body.push_str(line);
+                body.push('\n');
             }
         }
     }
+
+    let mut said: Vec<&str> = notes.iter().map(String::as_str).collect();
+
+    said.extend(
+        choices
+            .iter()
+            .zip(&written)
+            .filter(|(_, written)| !**written)
+            .map(|(choice, _)| choice.kept.as_str()),
+    );
+
+    let mut out = header;
+
+    preamble(&mut out, &said, written.iter().filter(|w| **w).count());
+    out.push_str(&body);
 
     out
 }
 
 /// Write what the reader is being asked, then what the merge settled without
 /// asking, both as comments under the projection's header.
-fn preamble(out: &mut String, notes: &[String], choices: &[Choice]) {
-    if choices.is_empty() && notes.is_empty() {
+fn preamble(out: &mut String, notes: &[&str], contests: usize) {
+    if contests == 0 && notes.is_empty() {
         return;
     }
 
     out.push_str("#\n");
 
-    if !choices.is_empty() {
-        let count = choices.len();
-        let plural = if count == 1 { "" } else { "s" };
+    if contests > 0 {
+        let plural = if contests == 1 { "" } else { "s" };
 
         comment(
             out,
             &format!(
-                "{count} conflict{plural} below {} yours to decide, written as the same key once per side. Keep one line of each and delete the others, or replace them with a value of your own: TOML forbids duplicate keys, so this document cannot be applied until every one is decided.",
-                if count == 1 { "is" } else { "are" }
+                "{contests} conflict{plural} below {} yours to decide, written as the same key once per side. Keep one line of each and delete the others, or replace them with a value of your own: TOML forbids duplicate keys, so this document cannot be applied until every one is decided.",
+                if contests == 1 { "is" } else { "are" }
             ),
         );
     }
 
     if !notes.is_empty() {
-        if !choices.is_empty() {
+        if contests > 0 {
             out.push_str("#\n");
         }
 
@@ -571,18 +653,18 @@ fn addresses(at: &[(&str, usize)], here: &[(&str, usize)]) -> bool {
 
 /// Find the component a merge path names in one calendar, with the address of
 /// the block that projects it.
-fn locate<'i>(ical: &'i ICalendar, path: &IcalComponentPath<'_>) -> Option<Located<'i>> {
-    let root = ical.components.first()?;
+fn locate<'i, 'a>(ical: &'i Calendar<'a>, path: &IcalComponentPath<'_>) -> Option<Located<'i, 'a>> {
+    let root = ical.read()?;
     let mut steps = path.0.iter();
 
     // A bare component stream has no VCALENDAR to address from: its lone
     // component is the first block, and a path addresses what nests in it.
-    let mut found = if root.component_type == ICalendarComponentType::VCalendar {
+    let mut found = if named(root, "VCALENDAR") {
         let step = steps.next()?;
         let spec = spec_of(TOP_LEVEL, &step.name)?;
-        let siblings: Vec<&ICalendarComponent> = top_level(ical)
+        let siblings: Vec<&IcalCst<'a>> = top_level(ical)
             .into_iter()
-            .filter(|component| component.component_type.as_str() == spec.name)
+            .filter(|component| named(component, spec.name))
             .collect();
         let (index, component) = pick(&siblings, &step.key)?;
 
@@ -592,7 +674,7 @@ fn locate<'i>(ical: &'i ICalendar, path: &IcalComponentPath<'_>) -> Option<Locat
             address: vec![(spec.key, index)],
         }
     } else {
-        let spec = spec_of(TOP_LEVEL, root.component_type.as_str())?;
+        let spec = spec_of(TOP_LEVEL, &root.begin.as_ref()?.raw_value_str())?;
 
         Located {
             component: root,
@@ -603,7 +685,7 @@ fn locate<'i>(ical: &'i ICalendar, path: &IcalComponentPath<'_>) -> Option<Locat
 
     for step in steps {
         let spec = spec_of(found.spec.children, &step.name)?;
-        let siblings = child_components(ical, Some(found.component), spec);
+        let siblings = child_components(Some(found.component), spec);
         let (index, component) = pick(&siblings, &step.key)?;
 
         found.address.push((spec.key, index));
@@ -632,10 +714,7 @@ fn field_of(spec: &'static Spec, name: &str) -> Option<&'static Field> {
 /// The sibling a merge step names: the one whose `UID` matches, the one whose
 /// `UID` matches and overrides an instance where the step does, or the
 /// position the step carries for a component with no `UID` at all.
-fn pick<'i>(
-    siblings: &[&'i ICalendarComponent],
-    key: &str,
-) -> Option<(usize, &'i ICalendarComponent)> {
+fn pick<'i, 'a>(siblings: &[&'i IcalCst<'a>], key: &str) -> Option<(usize, &'i IcalCst<'a>)> {
     let (uid, instance) = match key.split_once('/') {
         Some((uid, _)) => (uid, true),
         None => (key, false),
@@ -653,20 +732,13 @@ fn pick<'i>(
 }
 
 /// The text of a component's first property of this name.
-fn text_of(component: &ICalendarComponent, name: &str) -> Option<String> {
-    let entry = component
-        .entries
-        .iter()
-        .find(|entry| entry.name.as_str() == name)?;
-
-    entry_text(entry)
-        .map(ToOwned::to_owned)
-        .or_else(|| entry.values.first().and_then(value_text))
+fn text_of(component: &IcalCst<'_>, name: &str) -> Option<String> {
+    props(component, name).next().map(text)
 }
 
 /// How one side spells a field of the component a path names, its empty value
 /// where the side carries neither the property nor the component.
-fn field_lines(ical: &ICalendar, at: &IcalPropPath<'_>, field: &Field) -> Vec<String> {
+fn field_lines(ical: &Calendar<'_>, at: &IcalPropPath<'_>, field: &Field) -> Vec<String> {
     let component = locate(ical, &at.component).map(|found| found.component);
 
     field
@@ -678,14 +750,42 @@ fn field_lines(ical: &ICalendar, at: &IcalPropPath<'_>, field: &Field) -> Vec<St
 
 /// The same for an attendee, which is one table among the ones its field
 /// wrote rather than a key.
-fn attendee_lines(ical: &ICalendar, at: &IcalPropPath<'_>, field: &Field) -> Vec<String> {
+fn attendee_lines(ical: &Calendar<'_>, at: &IcalPropPath<'_>, field: &Field) -> Vec<String> {
     let component = locate(ical, &at.component).map(|found| found.component);
     let entries = entries_for(component, field);
+    let entry = index_of(&entries, at).map(|index| entries[index]);
 
-    attendee_keys(entries.get(at.index).copied())
+    attendee_keys(entry)
         .into_iter()
         .map(|line| line.lhs)
         .collect()
+}
+
+/// Which of the entries a field wrote in one calendar a property path names:
+/// the one carrying its identity, or the position it counted where iCalendar
+/// gives the property none.
+///
+/// The position is counted in the side the action was read from, so a side's
+/// own removal moves it away from what it named in every other calendar. An
+/// identity, the calendar address of an attendee, names the same property in
+/// all of them.
+fn index_of(entries: &[&IcalLine<'_>], at: &IcalPropPath<'_>) -> Option<usize> {
+    let Some(identity) = at.identity.as_deref() else {
+        return (at.index < entries.len()).then_some(at.index);
+    };
+
+    entries
+        .iter()
+        .position(|line| strip_mailto(&text(line)).eq_ignore_ascii_case(strip_mailto(identity)))
+}
+
+/// The list an action edited, for the two actions that edit one.
+fn edited_items<'p, 'a>(action: &'p IcalMergeAction<'a>) -> Option<&'p IcalPropPath<'a>> {
+    match action {
+        IcalMergeAction::ValueItemAdded { at, .. }
+        | IcalMergeAction::ValueItemRemoved { at, .. } => Some(at),
+        _ => None,
+    }
 }
 
 /// Whether an action takes something away, which is a collision the merge
@@ -1008,5 +1108,25 @@ mod tests {
         );
         assert!(!merged.toml.contains("# conflict"), "offered as a choice");
         assert!(merged.apply(&merged.toml).is_ok());
+    }
+
+    #[test]
+    fn an_unreadable_side_is_named() {
+        let merged = Merge {
+            base: BASE,
+            local: BASE,
+            remote: "not an iCalendar at all",
+            speaks_for: None,
+        }
+        .project();
+
+        let Err(err) = merged else {
+            panic!("the unreadable side was read");
+        };
+
+        assert!(
+            matches!(&err, TcalError::ReadCalendar { side, .. } if *side == "remote"),
+            "{err:?}",
+        );
     }
 }

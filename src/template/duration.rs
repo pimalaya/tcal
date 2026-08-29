@@ -1,4 +1,6 @@
-//! Durations (`DURATION`, an alarm `TRIGGER` offset) as dotted
+//! # Durations
+//!
+//! `DURATION` and an alarm `TRIGGER` offset as dotted
 //! `<key>.{week,day,hour,min,sec}` magnitude keys, the sign implied.
 
 use alloc::{
@@ -9,24 +11,20 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::ICalendarEntry;
+use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
 use crate::template::{
     line::{Line, int_line},
-    util::{scalar_text, table_int, table_text, toml_str},
+    util::{table_int, table_text, text, toml_str},
 };
 
 /// Project a duration entry as dotted magnitude keys, the field's hint on
 /// the leading line. The sign is implied by context, so the parts are
 /// unsigned; a value that is not a plain duration (an absolute date-time
 /// trigger) is shown raw as `<prefix>.raw`, round-tripping intact.
-pub fn duration_lines(
-    entry: Option<&ICalendarEntry>,
-    prefix: &str,
-    hint: Option<&str>,
-) -> Vec<Line> {
-    let value = entry.map(scalar_text).filter(|value| !value.is_empty());
+pub fn duration_lines(entry: Option<&IcalLine<'_>>, prefix: &str, hint: Option<&str>) -> Vec<Line> {
+    let value = entry.map(text).filter(|value| !value.is_empty());
     let parts = value.as_deref().and_then(parse_duration);
 
     if let Some(value) = &value

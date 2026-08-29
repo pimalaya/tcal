@@ -1,3 +1,5 @@
+//! # Command-line interface
+//!
 //! The `tcal` binary: three verbs over the [`crate::template`] projection.
 //!
 //! - `template [SOURCE]`: print the TOML scaffold, blank or prefilled from an

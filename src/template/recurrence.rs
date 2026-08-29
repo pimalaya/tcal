@@ -1,5 +1,7 @@
-//! Recurrence rules (`RRULE`) as dotted `<prefix>.*` keys of friendly parts,
-//! with a raw escape hatch for parts tcal does not model.
+//! # Recurrence rules
+//!
+//! `RRULE` as dotted `<prefix>.*` keys of friendly parts, with a raw escape
+//! hatch for the parts tcal does not model.
 
 use alloc::{
     borrow::ToOwned,
@@ -9,17 +11,17 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::ICalendarEntry;
+use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{friendly_to_ical, until_to_ical, until_to_toml},
+    datetime::{friendly_to_ical, toml_date, until_to_ical},
     line::{Line, int_line},
-    util::{scalar_text, table_int, table_text, toml_array, toml_int_array, toml_str},
+    util::{raw, table_int, table_text, toml_array, toml_int_array, toml_str},
 };
 
-/// The `RRULE` tokens tcal models, in calcard's canonical serialization
-/// order; a rule using any other token is shown raw to round-trip.
+/// The `RRULE` tokens tcal models, in the order they are written back; a
+/// rule using any other token is shown raw to round-trip.
 const RECUR_KEYS: &[&str] = &[
     "FREQ",
     "UNTIL",
@@ -35,8 +37,8 @@ const RECUR_KEYS: &[&str] = &[
 /// Project a recurrence entry as dotted `<prefix>.*` keys of friendly parts.
 /// A rule using a part tcal does not model is shown as a single raw
 /// `<prefix>.rule` key instead.
-pub fn recur_lines(entry: Option<&ICalendarEntry>, prefix: &str) -> Vec<Line> {
-    let rule = entry.map(scalar_text).filter(|rule| !rule.is_empty());
+pub fn recur_lines(entry: Option<&IcalLine<'_>>, prefix: &str) -> Vec<Line> {
+    let rule = entry.map(raw).filter(|rule| !rule.is_empty());
     let parts = rule.as_deref().map(parse_rrule).unwrap_or_default();
 
     if let Some(rule) = &rule
@@ -165,7 +167,7 @@ fn parse_rrule(rule: &str) -> Vec<(String, String)> {
 /// The `until` right-hand side: a native TOML date-time when the value is
 /// in iCalendar digit form, else a quoted string (empty when absent).
 fn until_line(raw: Option<&str>) -> String {
-    match raw.and_then(until_to_toml) {
+    match raw.and_then(toml_date) {
         Some(dtm) => dtm.to_string(),
         None => toml_str(raw.unwrap_or_default()),
     }

@@ -1,5 +1,7 @@
-//! The modeled component vocabulary: each [`Spec`]'s [`Field`]s, and how
-//! every [`Kind`] of value projects to and parses from TOML.
+//! # Modelled vocabulary
+//!
+//! Each [`Spec`]'s [`Field`]s, and how every [`Kind`] of value projects to and
+//! parses from TOML.
 
 use alloc::{
     borrow::ToOwned,
@@ -9,24 +11,25 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::{ICalendarEntry, ICalendarParameterName};
+use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
 use crate::template::{
-    datetime::{DATE_HINT, date_line, ical_date, is_utc, offset_text, toml_date, toml_date_line},
+    datetime::{DATE_HINT, date_line, is_utc, toml_date, toml_date_line},
     duration::{duration_lines, duration_value},
     line::Line,
     patch,
     recurrence::{recur_lines, recur_rule},
     util::{
-        ensure_mailto, entry_text, escape, push_param, scalar_text, strip_mailto, tables,
-        toml_array, toml_number, toml_str, value_text,
+        ensure_mailto, escape, items, param, push_param, strip_mailto, tables, text, toml_array,
+        toml_number, toml_str,
     },
 };
 
 /// Shape of a modeled property, driving both projection and emission.
 pub(crate) enum Kind {
-    /// Bare key; `escape` set for TEXT properties calcard unescapes.
+    /// Bare key; `escape` set for the TEXT properties whose value is
+    /// escaped on the wire.
     Scalar { escape: bool },
 
     /// Closed RFC 5545 vocabulary (`STATUS`, `CLASS`, ...): listed lowercase
@@ -538,13 +541,10 @@ pub(crate) static TOP_LEVEL: &[&Spec] = &[&VEVENT, &VTODO, &VJOURNAL, &VFREEBUSY
 
 impl Field {
     /// Render this field into projected lines.
-    pub(crate) fn lines(&self, entries: &[&ICalendarEntry]) -> Vec<Line> {
+    pub(crate) fn lines(&self, entries: &[&IcalLine<'_>]) -> Vec<Line> {
         match &self.kind {
             Kind::Scalar { .. } | Kind::Enum => {
-                let value = entries
-                    .first()
-                    .map(|entry| scalar_text(entry))
-                    .unwrap_or_default();
+                let value = entries.first().map(|line| text(line)).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -552,10 +552,7 @@ impl Field {
             }
 
             Kind::Number => {
-                let value = entries
-                    .first()
-                    .map(|entry| scalar_text(entry))
-                    .unwrap_or_default();
+                let value = entries.first().map(|line| text(line)).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_number(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -563,39 +560,28 @@ impl Field {
             }
 
             Kind::List { .. } => {
-                let items: Vec<String> = entries
-                    .iter()
-                    .flat_map(|entry| entry.values.iter().filter_map(value_text))
-                    .collect();
+                let values: Vec<String> = entries.iter().flat_map(|line| items(line)).collect();
                 vec![Line {
-                    lhs: format!("{} = {}", self.key, toml_array(&items)),
+                    lhs: format!("{} = {}", self.key, toml_array(&values)),
                     hint: self.hint.map(str::to_owned),
                 }]
             }
 
             Kind::Date => {
                 let entry = entries.first();
-                let dt = entry
-                    .and_then(|entry| entry.values.first())
-                    .and_then(|value| value.as_partial_date_time());
+                let value = entry.map(|line| text(line)).unwrap_or_default();
+                let dtm = toml_date(&value);
                 let tzid = entry
-                    .and_then(|entry| entry.parameters(&ICalendarParameterName::Tzid).next())
-                    .and_then(|value| value.as_text())
+                    .and_then(|line| param(line, "TZID"))
                     .filter(|zone| !zone.is_empty());
 
-                // A complete value projects as a native TOML date or
-                // date-time; a partial one (yearless or year-only) falls back
-                // to a quoted basic ISO 8601 string. The named zone, if any,
-                // is kept beside it.
-                let (rhs, zone) = match dt {
-                    Some(dt) => match toml_date(dt) {
-                        Some(native) => {
-                            let zone = (!is_utc(dt)).then_some(tzid).flatten();
-                            (native.to_string(), zone)
-                        }
-                        None => (toml_str(&ical_date(dt)), None),
-                    },
-                    None => (toml_str(""), None),
+                // A digit value projects as a native TOML date or date-time;
+                // anything else falls back to the string the calendar wrote,
+                // so a form the model does not read still round-trips. The
+                // named zone, if any, is kept beside it.
+                let (rhs, zone) = match &dtm {
+                    Some(dtm) => ((*dtm).to_string(), (!is_utc(dtm)).then_some(tzid).flatten()),
+                    None => (toml_str(&value), tzid.filter(|_| !value.is_empty())),
                 };
 
                 let mut lines = vec![Line {
@@ -606,9 +592,9 @@ impl Field {
                 // The zone key is kept only for a named zone (a UTC or
                 // floating value needs none), and shown empty in the blank
                 // scaffold as the affordance to add one.
-                if zone.is_some() || dt.is_none() {
+                if zone.is_some() || entry.is_none() {
                     lines.push(Line {
-                        lhs: format!("{}-tz = {}", self.key, toml_str(zone.unwrap_or_default())),
+                        lhs: format!("{}-tz = {}", self.key, toml_str(&zone.unwrap_or_default())),
                         hint: Some("America/New_York; empty for UTC or floating".to_owned()),
                     });
                 }
@@ -617,24 +603,15 @@ impl Field {
             }
 
             Kind::CalAddress => {
-                let value = entries
-                    .first()
-                    .and_then(|entry| entry_text(entry))
-                    .map(strip_mailto)
-                    .unwrap_or_default();
+                let value = entries.first().map(|line| text(line)).unwrap_or_default();
                 vec![Line {
-                    lhs: format!("{} = {}", self.key, toml_str(value)),
+                    lhs: format!("{} = {}", self.key, toml_str(strip_mailto(&value))),
                     hint: self.hint.map(str::to_owned),
                 }]
             }
 
             Kind::Offset => {
-                let value = entries
-                    .first()
-                    .and_then(|entry| entry.values.first())
-                    .and_then(|value| value.as_partial_date_time())
-                    .map(offset_text)
-                    .unwrap_or_default();
+                let value = entries.first().map(|line| text(line)).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -666,7 +643,7 @@ impl Field {
     /// This field's iCalendar content line(s) built from a TOML table
     /// (the edited document, or a single `[[alarm]]` table), without an
     /// end of line, skipping empty values. Empty when the field is absent
-    /// or blank, so [`crate::edit::tree::Component::set_all`] removes it.
+    /// or blank, so [`crate::ical::Component::set_lines`] removes it.
     ///
     /// `originals` are the component's own lines for this property, in the
     /// order the projection showed them. Each line is patched rather than

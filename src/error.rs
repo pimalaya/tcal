@@ -1,3 +1,5 @@
+//! # Errors
+//!
 //! The crate-wide error and result types.
 
 use core::result;
@@ -8,14 +10,11 @@ use thiserror::Error;
 /// The global `Error` enum of the library.
 #[derive(Debug, Error)]
 pub enum TcalError {
-    /// calcard parsed the input as a vCard instead of an iCalendar.
-    #[error("Contents parsed as a vCard, not an iCalendar")]
-    NotAnICalendar,
-    /// calcard could not parse the input as an iCalendar.
+    /// The input does not read as an iCalendar.
     #[error("Cannot parse iCalendar: {0}")]
     ParseICalendar(String),
-    /// ical-rs could not read one of a merge's three calendars, named by the
-    /// side it was given as.
+    /// One of a merge's three calendars does not read, named by the side it
+    /// was given as.
     #[error("Cannot read the {side} calendar: {message}")]
     ReadCalendar {
         /// The side the unreadable calendar was given as.

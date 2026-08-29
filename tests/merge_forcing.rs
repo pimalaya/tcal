@@ -10,10 +10,10 @@
 //! and would quietly make a second alarm or a second attendee instead of an
 //! error.
 //!
-//! The laws that do not hold today are kept here as ignored tests, each
-//! naming the finding that reproduces it.
-
-#![cfg(feature = "merge")]
+//! What the merge settled on its own is said in the header instead, and the
+//! laws below cover that too: a removal against an update, a part the
+//! projection does not show, a refusal for want of authority, and a list both
+//! sides edited, whose items are all kept.
 
 use proptest::prelude::*;
 use tcal::{
@@ -77,13 +77,15 @@ struct Contested {
     to: &'static str,
     /// The TOML key the collision writes once per side.
     key: &'static str,
-    /// The block header the key must stay inside, for a property nested in a
-    /// component of its own.
-    header: Option<&'static str>,
+    /// The block the key must stay inside, for a property nested in a
+    /// component of its own: the document header that opens one, and the
+    /// calendar line that makes one.
+    header: Option<(&'static str, &'static str)>,
 }
 
 /// The properties whose collision the projection can address, one per shape:
-/// a bare text key, a date, and a key inside a nested component.
+/// a bare key, a key inside a nested component, and a key inside the table
+/// an attendee projects to.
 const CONTESTED: &[Contested] = &[
     Contested {
         from: "SUMMARY:Standup",
@@ -107,25 +109,75 @@ const CONTESTED: &[Contested] = &[
         from: "ACTION:AUDIO",
         to: "ACTION:{}",
         key: "action",
-        header: Some("[[event.alarm]]"),
+        header: Some(("[[event.alarm]]", "BEGIN:VALARM")),
+    },
+    Contested {
+        from: "PARTSTAT=NEEDS-ACTION;CN=Bob",
+        to: "PARTSTAT={};CN=Bob",
+        key: "status",
+        header: Some(("[[event.attendee]]", "ATTENDEE")),
     },
 ];
 
-/// The side of a merge that replaces the contested line with its own value.
-fn side(spec: &Contested, value: &str) -> String {
-    BASE.replace(spec.from, &spec.to.replace("{}", value))
+/// The attendee a side may drop beside the property it contests, which moves
+/// every later attendee out of the position the report counted it at.
+const NEIGHBOUR: &str = "ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:mailto:ada@example.com\r\n";
+
+/// The side of a merge that replaces the contested line with its own value,
+/// having dropped the neighbouring attendee first where it removes one.
+fn side(spec: &Contested, value: &str, removes: bool) -> String {
+    let base = if removes {
+        BASE.replace(NEIGHBOUR, "")
+    } else {
+        BASE.to_string()
+    };
+
+    base.replace(spec.from, &spec.to.replace("{}", value))
 }
 
-/// Merge two sides of one contested property against the shared ancestor.
-fn merged(spec: &Contested, local: &str, remote: &str) -> Merged {
-    Merge {
+/// Merge two sides of one contested property against the shared ancestor,
+/// the local side removing the neighbouring attendee where it does.
+fn merged(spec: &Contested, local: &str, remote: &str, removes: bool) -> Merged {
+    let merged = Merge {
         base: BASE,
-        local: &side(spec, local),
-        remote: &side(spec, remote),
+        local: &side(spec, local, removes),
+        remote: &side(spec, remote, false),
         speaks_for: None,
     }
     .project()
-    .unwrap()
+    .unwrap();
+
+    announces_what_it_holds(&merged);
+    merged
+}
+
+/// The preamble announces exactly the contests the document writes below it.
+///
+/// A document announcing one and holding none sends the reader to decide
+/// something it never shows them, then parses, applies and takes one side
+/// without a word, which is the whole forcing gone.
+fn announces_what_it_holds(merged: &Merged) {
+    assert_eq!(
+        announced(&merged.toml),
+        merged.toml.matches("# conflict, keep one").count(),
+        "{}",
+        merged.toml,
+    );
+}
+
+/// The number of conflicts the preamble announces, none where it announces
+/// nothing.
+fn announced(toml: &str) -> usize {
+    let header = notes(toml);
+    let Some(at) = header.find(" conflict") else {
+        return 0;
+    };
+
+    header[..at]
+        .rsplit(' ')
+        .next()
+        .and_then(|count| count.parse().ok())
+        .unwrap_or_default()
 }
 
 /// A value distinct enough to be told apart in a calendar and in a document,
@@ -141,8 +193,9 @@ prop_compose! {
         which in 0..CONTESTED.len(),
         local in value(),
         remote in value(),
-    ) -> (&'static Contested, String, String) {
-        (&CONTESTED[which], format!("L{local}"), format!("R{remote}"))
+        removes in proptest::bool::ANY,
+    ) -> (&'static Contested, String, String, bool) {
+        (&CONTESTED[which], format!("L{local}"), format!("R{remote}"), removes)
     }
 }
 
@@ -211,8 +264,8 @@ proptest! {
     /// syntax error. The two live lines and the commented ancestor are all
     /// there, so the reader can see what is being asked.
     #[test]
-    fn an_undecided_document_is_refused_as_undecided((spec, local, remote) in collision()) {
-        let merged = merged(spec, &local, &remote);
+    fn an_undecided_document_is_refused_as_undecided((spec, local, remote, removes) in collision()) {
+        let merged = merged(spec, &local, &remote, removes);
 
         let left = format!("{} = \"{}\" # local", spec.key, local);
         let right = format!("{} = \"{}\" # remote", spec.key, remote);
@@ -231,8 +284,8 @@ proptest! {
     /// in both directions. A renderer that always found the same line would
     /// pass a one-sided test, so both are asked for.
     #[test]
-    fn keeping_one_side_yields_that_side((spec, local, remote) in collision()) {
-        let merged = merged(spec, &local, &remote);
+    fn keeping_one_side_yields_that_side((spec, local, remote, removes) in collision()) {
+        let merged = merged(spec, &local, &remote, removes);
 
         let kept_local = merged.apply(&keeping(&merged.toml, "# remote")).unwrap();
         prop_assert!(kept_local.contains(&local), "{}", kept_local);
@@ -246,8 +299,8 @@ proptest! {
     /// Replacing every line of a collision with a value of the reader's own
     /// yields that value, neither side's.
     #[test]
-    fn replacing_the_lines_yields_ones_own_value((spec, local, remote) in collision()) {
-        let merged = merged(spec, &local, &remote);
+    fn replacing_the_lines_yields_ones_own_value((spec, local, remote, removes) in collision()) {
+        let merged = merged(spec, &local, &remote, removes);
 
         let mine: String = merged
             .toml
@@ -269,8 +322,8 @@ proptest! {
     /// The commented ancestor is a comment and nothing more: deleting it
     /// decides nothing and changes nothing.
     #[test]
-    fn the_commented_ancestor_decides_nothing((spec, local, remote) in collision()) {
-        let merged = merged(spec, &local, &remote);
+    fn the_commented_ancestor_decides_nothing((spec, local, remote, removes) in collision()) {
+        let merged = merged(spec, &local, &remote, removes);
 
         let with = keeping(&merged.toml, "# remote");
         let without = keeping(&with, "# base");
@@ -285,23 +338,24 @@ proptest! {
     /// error, and the forcing would vanish exactly where the value is most
     /// complex.
     #[test]
-    fn a_nested_collision_never_repeats_its_block_header((spec, local, remote) in collision()) {
-        let Some(header) = spec.header else {
+    fn a_nested_collision_never_repeats_its_block_header((spec, local, remote, removes) in collision()) {
+        let Some((header, source)) = spec.header else {
             return Ok(());
         };
 
-        let merged = merged(spec, &local, &remote);
+        let merged = merged(spec, &local, &remote, removes);
 
+        // One block per surviving component, however many a side removed.
         prop_assert_eq!(
             merged.toml.lines().filter(|line| *line == header).count(),
-            2,
-            "{} is not written once per alarm",
+            merged.ical.matches(source).count(),
+            "{} is not written once per component",
             header,
         );
 
-        // Exactly one of the two alarms carries the contest: the contested
-        // key is written once per side there, every other key once, and the
-        // untouched alarm holds no duplicate at all.
+        // Exactly one block carries the contest: the contested key is
+        // written once per side there, every other key once, and an
+        // untouched block holds no duplicate at all.
         let blocks = blocks(&merged.toml, header);
         let contesting = blocks
             .iter()
@@ -336,6 +390,8 @@ fn a_contested_alarm_stays_one_alarm() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     assert_eq!(merged.toml.matches("[[event.alarm]]").count(), 2);
     assert_eq!(merged.toml.matches("action = \"AUDIO\"").count(), 1);
     assert!(merged.toml.contains("trigger.min = 6 # local"));
@@ -361,6 +417,8 @@ fn a_contested_attendee_stays_one_attendee() {
     }
     .project()
     .unwrap();
+
+    announces_what_it_holds(&merged);
 
     assert_eq!(merged.toml.matches("[[event.attendee]]").count(), 2);
     assert!(merged.toml.contains("status = \"ACCEPTED\" # local"));
@@ -406,6 +464,8 @@ fn two_sides_changing_different_keys_of_one_attendee_agree() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     assert_eq!(merged.toml.matches("[[event.attendee]]").count(), 2);
     assert!(!merged.toml.contains("# conflict"), "{}", merged.toml);
     assert!(merged.apply(&merged.toml).is_ok());
@@ -427,6 +487,8 @@ fn a_collision_the_projection_cannot_tell_apart_is_a_comment() {
     }
     .project()
     .unwrap();
+
+    announces_what_it_holds(&merged);
 
     assert_eq!(merged.toml.matches("display-name = \"Ada\"").count(), 1);
     assert!(!merged.toml.contains("# conflict"), "{}", merged.toml);
@@ -461,6 +523,8 @@ fn a_multi_line_value_is_contested_whole() {
     }
     .project()
     .unwrap();
+
+    announces_what_it_holds(&merged);
 
     // Both lines of the value differ, so both are contested, and the header
     // asks for a side rather than a line.
@@ -517,6 +581,8 @@ fn a_removal_against_an_update_is_a_comment() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     assert!(merged.ical.contains("SUMMARY:Team standup"));
     assert!(notes(&merged.toml).contains("removed on local and updated on remote"));
     assert!(!merged.toml.contains("# conflict"));
@@ -540,6 +606,8 @@ fn a_rule_against_an_instance_is_a_comment() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     assert!(merged.ical.contains("RRULE:FREQ=WEEKLY"));
     assert!(merged.ical.contains("DTSTART:20260107T110000Z"));
     assert!(notes(&merged.toml).contains("one is a series"));
@@ -562,6 +630,8 @@ fn a_refusal_for_want_of_authority_is_a_comment() {
     }
     .project()
     .unwrap();
+
+    announces_what_it_holds(&merged);
 
     assert!(merged.ical.contains("DTSTART:20260105T090000Z"));
     assert!(!merged.ical.contains("100000Z"));
@@ -588,11 +658,46 @@ fn an_unprojectable_collision_keeps_the_local_value_and_says_so() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     assert!(merged.ical.contains("X-FOO:two"));
     assert!(!merged.ical.contains("X-FOO:three"));
     assert!(notes(&merged.toml).contains("the local value was kept"));
     assert!(!merged.toml.contains("# conflict"));
     assert!(merged.apply(&merged.toml).is_ok());
+}
+
+/// A note longer than the column the document is written to is folded over
+/// two comment lines, the second indented under the first line's text, so the
+/// header keeps the width everything below it keeps.
+#[test]
+fn a_long_note_wraps_under_itself() {
+    let base = BASE.replace("SUMMARY:Standup", "SUMMARY:Standup\r\nX-FOO:one");
+    let local = base.replace("X-FOO:one", "X-FOO:two");
+    let remote = base.replace("X-FOO:one", "X-FOO:three");
+
+    let merged = Merge {
+        base: &base,
+        local: &local,
+        remote: &remote,
+        speaks_for: None,
+    }
+    .project()
+    .unwrap();
+
+    announces_what_it_holds(&merged);
+
+    let header: Vec<&str> = merged
+        .toml
+        .lines()
+        .take_while(|line| line.starts_with('#'))
+        .collect();
+
+    assert!(header.iter().all(|line| line.len() <= 68), "{header:#?}");
+    assert!(
+        header.iter().any(|line| line.starts_with("#   ")),
+        "{header:#?}",
+    );
 }
 
 /// The refusal names a key the reader can find in the document, so that
@@ -611,6 +716,8 @@ fn the_refusal_names_a_key_the_document_writes() {
     .project()
     .unwrap();
 
+    announces_what_it_holds(&merged);
+
     let Err(TcalError::Undecided(key)) = merged.apply(&merged.toml) else {
         panic!("not refused as undecided");
     };
@@ -627,13 +734,12 @@ fn the_refusal_names_a_key_the_document_writes() {
     );
 }
 
-/// A collision on a multi-valued property is put to the reader like any
-/// other, rather than being settled by keeping every item both sides wrote.
-///
-/// See findings/tcal-list-collision-silently-unioned.md.
+/// Both sides adding to a multi-valued property keeps every item, which is
+/// right for a value RFC 5545 gives no order to, and the header says so, so
+/// the union is something the reader reviews rather than something that
+/// happened to them.
 #[test]
-#[ignore = "fails: see findings/tcal-list-collision-silently-unioned.md"]
-fn a_list_collision_is_put_to_the_reader() {
+fn a_list_union_is_said_in_the_header() {
     let base = BASE.replace("SUMMARY:Standup", "SUMMARY:Standup\r\nCATEGORIES:a,b");
     let local = base.replace("CATEGORIES:a,b", "CATEGORIES:c,d");
     let remote = base.replace("CATEGORIES:a,b", "CATEGORIES:e,f");
@@ -647,27 +753,33 @@ fn a_list_collision_is_put_to_the_reader() {
     .project()
     .unwrap();
 
-    // Today the merge writes CATEGORIES:e,f,c,d, a value neither side wrote,
-    // and the document says nothing at all about it.
+    announces_what_it_holds(&merged);
+
     assert!(
-        merged.toml.contains("# conflict") || merged.toml.contains("categories"),
+        notes(&merged.toml).contains(
+            "event 1 / categories: both sides changed its list; the items of both were kept."
+        ),
         "{}",
         merged.toml,
     );
+    assert!(!merged.toml.contains("# conflict"), "offered as a choice");
+
+    // Nothing is left to choose, so the document applies as it stands, with
+    // the whole list on the one key the reader can edit.
     assert!(
-        !merged.ical.contains("CATEGORIES:e,f,c,d"),
+        merged.toml.contains(r#"categories = ["e", "f", "c", "d"]"#),
         "{}",
-        merged.ical
+        merged.toml,
     );
+
+    let out = merged.apply(&merged.toml).unwrap();
+    assert!(out.contains("CATEGORIES:e,f,c,d"), "{out}");
 }
 
 /// A collision on one attendee survives a removal of a different one: the
-/// merge either puts it to the reader or says how it settled it, but never
-/// drops one side's decision without a word.
-///
-/// See findings/tcal-a-removal-swallows-a-neighbours-collision.md.
+/// removal moves the surviving attendee out of the position the report
+/// counted it at, and the contest still lands on the table it wrote.
 #[test]
-#[ignore = "fails: see findings/tcal-a-removal-swallows-a-neighbours-collision.md"]
 fn a_removal_does_not_swallow_a_neighbours_collision() {
     // Local drops Ada and accepts as Bob; remote declines as Bob. Bob is
     // contested on both sides, and Ada has nothing to do with it.
@@ -688,11 +800,20 @@ fn a_removal_does_not_swallow_a_neighbours_collision() {
     .project()
     .unwrap();
 
-    // Today the merge keeps ACCEPTED, drops DECLINED, and the document
-    // carries neither a contest nor a note about it.
-    assert!(
-        merged.toml.contains("# conflict") || merged.toml.contains("# - "),
-        "{}",
-        merged.toml,
-    );
+    announces_what_it_holds(&merged);
+
+    // Ada is gone, so Bob's table is the only one, and his answer is
+    // contested in it rather than silently taken from the local side.
+    assert_eq!(merged.toml.matches("[[event.attendee]]").count(), 1);
+    assert!(merged.toml.contains("status = \"ACCEPTED\" # local"));
+    assert!(merged.toml.contains("status = \"DECLINED\" # remote"));
+
+    match merged.apply(&merged.toml) {
+        Err(TcalError::Undecided(key)) => assert_eq!(key, "status"),
+        other => panic!("not refused as undecided: {:?}", other.map(|_| ())),
+    }
+
+    let kept_remote = merged.apply(&keeping(&merged.toml, "# local")).unwrap();
+    assert!(kept_remote.contains("PARTSTAT=DECLINED"), "{kept_remote}");
+    assert!(!kept_remote.contains("ada@example.com"), "{kept_remote}");
 }

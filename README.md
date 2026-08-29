@@ -78,12 +78,12 @@ This repository ships two interfaces:
 ## Features
 
 - Partial `no_std` support
-- iCalendar from/to TOML **projection**, backed by [calcard](https://crates.io/crates/calcard) (RFC 5545).
+- iCalendar from/to TOML **projection**, backed by [ical-rs](https://crates.io/crates/ical-rs) (RFC 5545).
 - **Friendly** keys and values: cryptic names become readable TOML keys.
 - **Structured** recurrence and duration.
 - **Discoverable** properties: prints all available properties with empty values by default, fill the ones you need.
-- **Minimal, lossless diffs**: `apply` patches the original text through a format-preserving editor, re-rendering only the lines you changed.
-- **Three-way merge**, backed by [ical-rs](https://crates.io/crates/ical-rs): what two sides both changed comes back as duplicate TOML keys, which do not parse until you decide them.
+- **Minimal, lossless diffs**: `apply` patches the original text through a byte-faithful syntax tree, re-rendering only the lines you changed.
+- **Three-way merge**: what two sides both changed comes back as duplicate TOML keys, which do not parse until you decide them.
 
 ## Installation
 
@@ -113,7 +113,7 @@ To use `tcal` as a library, add it to your `Cargo.toml`:
 tcal = "0.0.1"
 ```
 
-The library has no default features: it is a slim `no_std` (plus `alloc`) build with no clap, no editor integration, just the `project` / `apply` projection over a calcard `ICalendar`. The three-way merge behind `tcal merge` is the opt-in `merge` feature, the only one that links a second iCalendar library ([ical-rs](https://crates.io/crates/ical-rs)). The CLI lives behind the opt-in `cli` feature (enabled above with `cargo install --features cli`), which pulls `merge` in.
+The library has no default features: it is a slim `no_std` (plus `alloc`) build with no clap and no editor integration, just the `project` / `apply` projection and the three-way merge over it. The CLI lives behind the opt-in `cli` feature (enabled above with `cargo install --features cli`).
 
 ### Nix
 
@@ -230,7 +230,7 @@ The [edit](https://crates.io/crates/edit) crate resolves `$VISUAL` first, then `
 
 ### Will tcal reformat my whole calendar on edit?
 
-No. `apply` patches the original text through a format-preserving editor (the iCalendar analog of toml_edit): only the lines of modeled fields you actually changed are re-rendered, so the diff is minimal. Folding, parameter casing, property order and line endings of every untouched line are kept byte-for-byte.
+No. `apply` patches the original text through a byte-faithful syntax tree: only the lines of modeled fields you actually changed are re-rendered, so the diff is minimal. Folding, parameter casing, property order and line endings of every untouched line are kept byte-for-byte.
 
 ### What happens to properties and components tcal does not list?
 

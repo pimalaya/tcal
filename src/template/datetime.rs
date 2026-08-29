@@ -1,7 +1,10 @@
-//! Date conversions between calcard's [`PartialDateTime`], native TOML
-//! date-times, and iCalendar digit forms. Projection emits a native TOML
-//! `date`/`datetime`; apply reads one back, and still accepts the older
-//! friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` string form.
+//! # Dates
+//!
+//! Conversions between iCalendar digit forms and native TOML date-times.
+//!
+//! The projection emits a native TOML `date` or `datetime` read from the
+//! value as the calendar writes it; apply reads one back, and still accepts
+//! the older friendly `YYYY-MM-DD[ HH:MM[:SS]][ UTC]` string form.
 
 use alloc::{
     borrow::ToOwned,
@@ -9,50 +12,15 @@ use alloc::{
     string::{String, ToString},
 };
 
-use calcard::common::PartialDateTime;
 use toml_edit::{Date, Datetime, Offset, Time};
 
 /// Shared hint for the date keys: a concrete example native TOML date-time.
 pub const DATE_HINT: &str = "2026-06-13T14:30:00";
 
-/// Whether a calcard date-time carries an explicit UTC marker (a trailing
-/// `Z`), which calcard encodes as a zero numeric offset.
-pub fn is_utc(dt: &PartialDateTime) -> bool {
-    matches!((dt.tz_hour, dt.tz_minute), (Some(0), Some(0)))
-}
-
-/// Build a native TOML value from a calcard date-time, or `None` when it is
-/// partial (a yearless or year-only date) and so has no native TOML form.
-/// An all-day value becomes a local date, a UTC value an offset date-time,
-/// anything else a local date-time; a named zone is carried separately, not
-/// folded into the value.
-pub fn toml_date(dt: &PartialDateTime) -> Option<Datetime> {
-    let date = Date {
-        year: dt.year?,
-        month: dt.month?,
-        day: dt.day?,
-    };
-
-    let Some((hour, minute)) = dt.hour.zip(dt.minute) else {
-        return Some(Datetime {
-            date: Some(date),
-            time: None,
-            offset: None,
-        });
-    };
-
-    let time = Time {
-        hour,
-        minute,
-        second: Some(dt.second.unwrap_or(0)),
-        nanosecond: None,
-    };
-
-    Some(Datetime {
-        date: Some(date),
-        time: Some(time),
-        offset: is_utc(dt).then_some(Offset::Z),
-    })
+/// Whether a date-time is written as UTC, which iCalendar marks with a
+/// trailing `Z`.
+pub fn is_utc(dtm: &Datetime) -> bool {
+    matches!(dtm.offset, Some(Offset::Z))
 }
 
 /// Build an iCalendar date line from a native TOML date-time and optional
@@ -85,9 +53,12 @@ pub fn toml_date_line(name: &str, dtm: &Datetime, tz: Option<&str>) -> String {
     }
 }
 
-/// Parse an `RRULE` `UNTIL` digit value (`20261231T235900Z`) into a native
-/// TOML date-time, or `None` when it is not in the expected digit form.
-pub fn until_to_toml(raw: &str) -> Option<Datetime> {
+/// Read an iCalendar date or date-time value (`20261231T235900Z`) as a
+/// native TOML one.
+///
+/// `None` for anything not in that digit form, which the projection then
+/// shows as the string the calendar wrote, so it round-trips whole.
+pub fn toml_date(raw: &str) -> Option<Datetime> {
     let raw = raw.trim();
     let (body, utc) = match raw.strip_suffix('Z') {
         Some(body) => (body, true),
@@ -217,48 +188,6 @@ pub fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)
     };
 
     Some((date, time, utc))
-}
-
-/// Render a calcard date-time as its RFC 5545 basic ISO 8601 string,
-/// covering the partial forms native TOML cannot hold (a yearless `--0415`
-/// or year-only `2009` date), with a `T..` time when present. This is the
-/// projection fallback for the partial values [`toml_date`] returns `None`
-/// for.
-pub fn ical_date(dt: &PartialDateTime) -> String {
-    let mut out = String::new();
-
-    match (dt.year, dt.month, dt.day) {
-        (Some(y), Some(m), Some(d)) => out.push_str(&format!("{y:04}{m:02}{d:02}")),
-        (Some(y), Some(m), None) => out.push_str(&format!("{y:04}-{m:02}")),
-        (Some(y), None, None) => out.push_str(&format!("{y:04}")),
-        (None, Some(m), Some(d)) => out.push_str(&format!("--{m:02}{d:02}")),
-        (None, Some(m), None) => out.push_str(&format!("--{m:02}")),
-        (None, None, Some(d)) => out.push_str(&format!("---{d:02}")),
-        _ => {}
-    }
-
-    if let Some(hour) = dt.hour {
-        out.push_str(&format!("T{hour:02}"));
-        if let Some(minute) = dt.minute {
-            out.push_str(&format!("{minute:02}"));
-            if let Some(second) = dt.second {
-                out.push_str(&format!("{second:02}"));
-            }
-        }
-    }
-
-    out
-}
-
-/// Render a calcard UTC-offset (`TZOFFSETFROM`/`TZOFFSETTO`) as `±HHMM`,
-/// mirroring calcard's writer; empty when the offset is absent.
-pub fn offset_text(dt: &PartialDateTime) -> String {
-    let (Some(hour), Some(minute)) = (dt.tz_hour, dt.tz_minute) else {
-        return String::new();
-    };
-    let sign = if dt.tz_minus { '-' } else { '+' };
-
-    format!("{sign}{hour:02}{minute:02}")
 }
 
 /// Convert a friendly date back to the `RRULE` `UNTIL` digit form, passing

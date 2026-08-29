@@ -20,8 +20,8 @@ pub fn rewritten(original: Option<&str>, line: &str, shown: &[&str]) -> String {
         return line.to_owned();
     };
 
-    let held = split(prefix(original), ';');
-    let written = split(prefix(line), ';');
+    let held = split(head(original), ';');
+    let written = split(head(line), ';');
     let mut out = String::from(written.first().copied().unwrap_or_default());
 
     for param in held.iter().skip(1) {
@@ -39,17 +39,17 @@ pub fn rewritten(original: Option<&str>, line: &str, shown: &[&str]) -> String {
     }
 
     out.push(':');
-    out.push_str(value(line));
+    out.push_str(value_of(line));
     out
 }
 
 /// The name and parameters of a content line, its value excluded.
-fn prefix(line: &str) -> &str {
+pub(crate) fn head(line: &str) -> &str {
     &line[..colon(line)]
 }
 
 /// The value of a content line, its name and parameters excluded.
-fn value(line: &str) -> &str {
+pub(crate) fn value_of(line: &str) -> &str {
     line.get(colon(line) + 1..).unwrap_or_default()
 }
 
@@ -70,7 +70,7 @@ fn colon(line: &str) -> usize {
 }
 
 /// Split on every `sep` outside a quoted parameter value.
-fn split(text: &str, sep: char) -> Vec<&str> {
+pub(crate) fn split(text: &str, sep: char) -> Vec<&str> {
     let mut out = Vec::new();
     let mut quoted = false;
     let mut start = 0;
@@ -120,8 +120,8 @@ mod tests {
     fn a_quoted_parameter_holds_its_own_colon() {
         let line = "ORGANIZER;SENT-BY=\"mailto:s@x\":mailto:chair@example.com";
 
-        assert_eq!(super::prefix(line), "ORGANIZER;SENT-BY=\"mailto:s@x\"");
-        assert_eq!(super::value(line), "mailto:chair@example.com");
+        assert_eq!(super::head(line), "ORGANIZER;SENT-BY=\"mailto:s@x\"");
+        assert_eq!(super::value_of(line), "mailto:chair@example.com");
     }
 
     #[test]

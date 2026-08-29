@@ -8,8 +8,6 @@ status: current
 
 Reconciling two divergent edits of one calendar, and putting what could not be reconciled to a person. The merge itself is ical-rs's, over a byte-faithful syntax tree; this crate owns the part that has a reader in it, which is how a collision is written so that it cannot be overlooked.
 
-The whole capability is opt-in, behind a `merge` cargo feature that the `cli` feature pulls in. Linking a second iCalendar library is the one thing this crate does that a consumer wanting only the projection has no use for, so it is the one thing that is not paid for by default.
-
 The vocabulary the document is written in is the projection every other verb uses, and folding an edited document back onto bytes is the same `apply` as anywhere else. Nothing here changes either: a merged document is an ordinary projected document with two additions, comments in its header and one key written more than once.
 
 ### Requirement: Merging is a verb over three files
@@ -17,7 +15,11 @@ The vocabulary the document is written in is the projection every other verb use
 
 It SHALL take the calendar address the edited side speaks for as an option, passed through to the merge, and SHALL claim nothing where it is not given.
 
+The capability SHALL be built unconditionally. ical-rs is a plain dependency of every configuration, so gating the merge changes nothing about the crate set and a cargo feature has nothing left to buy.
+
 Taking the three rather than a pre-merged body with markers is what keeps the document a calendar. Line markers are how a line-oriented merge shows an unresolved region, and an iCalendar is not lines: a marker in one would break every parser downstream, including this one. The merge is a pure function over bodies already at hand, so running it here rather than receiving its output costs nothing and invents no format.
+
+The merged calendar SHALL be projected as the merge produced it, rather than written out and read back. Serialising between the reconciliation and the document is a second reading of the same body, and a byte the merge preserved that a second reading changed would reach the reader as the merge's own work.
 
 The local side is the merge's right side: the edited one, whose actions are replayed onto the remote side's bytes and on whose behalf authority is claimed. It SHALL also be the preferred side, so a collision the merge does not settle holds the local value in the merged bytes, which the document then asks about rather than keeps quietly. The two are separate statements: being replayed is what makes the local side judgeable, and being preferred is what stops that judgement costing it every collision. This is what tCard does with local on the left, where a card has no organiser and nothing to judge.
 
@@ -30,6 +32,16 @@ The local side is the merge's right side: the edited one, whose actions are repl
 - GIVEN a local side speaking for an attendee, changing a property both sides changed
 - WHEN the merge is projected
 - THEN the merged bytes carry the local value, and a change the attendee has no authority over is still refused
+
+### Requirement: A read failure names the side it came from
+Where one of a merge's three calendars does not parse, the refusal SHALL name the side it was given as, beside what the reader made of it.
+
+A merge is the one verb reading more than one body, and its three paths are the user's. A refusal naming none of them says only that the merge failed, leaving the reader to open all three to find out which.
+
+#### Scenario: An unreadable remote calendar
+- GIVEN a merge whose remote calendar is not an iCalendar
+- WHEN it is projected
+- THEN it is refused, naming the remote side
 
 ### Requirement: A collision is duplicate keys
 A property both sides changed SHALL be written once per surviving side, each line naming its side, with the ancestor above them as a comment. Resolving SHALL be deleting the lines that are not wanted, or replacing all of them with a value of the user's own.
@@ -89,17 +101,42 @@ A collision on something the projection does not model is likewise a comment, na
 - WHEN the document is projected
 - THEN the attendee is written once and the collision is said in a comment
 
+### Requirement: A union is said in the header
+Where both sides edited the items of one multi-valued property, the document SHALL say so in its header comment, stating that the items of both were kept. It SHALL NOT contest them.
+
+The items of such a value merge as a set, RFC 5545 giving them no order, so both sides' additions and removals all apply and nothing collides. That is the right outcome: two sides each adding a category should keep both, and putting them to a reader would throw one away for no reason. The silence is what is wrong, since the merged value is then one neither side wrote and nobody was told it was assembled.
+
+#### Scenario: Both sides rewrite a list
+- GIVEN a base holding `CATEGORIES:a,b`, a local holding `CATEGORIES:c,d` and a remote holding `CATEGORIES:e,f`
+- WHEN they are merged
+- THEN the calendar holds all four, the header says the items of both were kept, and the document applies as it stands
+
+### Requirement: The document holds every conflict it announces
+The preamble SHALL announce as many conflicts as the document writes contests below it. A collision the document found no line to contest SHALL become a header comment saying the local value was kept, the same comment an unaddressable collision becomes, rather than being dropped.
+
+The announcement is the reader's whole instruction: it says the document cannot be applied until every conflict is decided. A document announcing one and showing none sends them looking for a key that is not there, then applies without a word and takes one side. Counting what was written rather than what was reported makes the two numbers one number, and the fallback is what keeps that from costing a report.
+
+#### Scenario: A conflict with nowhere to go is still said
+- GIVEN a collision the document has no line to contest
+- WHEN the document is projected
+- THEN the preamble announces no conflict, and the collision is said in a comment
+
 ### Requirement: A nested collision stays inside its table
 A collision inside a nested component SHALL be rendered as duplicate keys within the single table that projects it, and SHALL NOT be rendered as a repeated array-of-tables block. Repeating such a header is valid TOML and would produce a second alarm or attendee rather than a parse error, so the forcing that makes the whole convention safe would silently vanish exactly where the structure is deepest.
 
 The addressing is not this crate's to derive. The merge report names the component a property belongs to, by `UID` and `RECURRENCE-ID` where there is one, and its position among its siblings where there is not, so a collision addresses one projected key however deep it sits.
 
-An attendee is the one property the projection writes as a table rather than a key, so a contested attendee is contested key by key inside the one table it wrote, for the same reason.
+An attendee is the one property the projection writes as a table rather than a key, so a contested attendee is contested key by key inside the one table it wrote, for the same reason. Which attendee SHALL be resolved by the identity the report carries, the calendar address, in each calendar the projection reads: the merged one it writes the contest into, and the three the sides' lines come from. The position the report also carries is counted in the side that wrote the action, so it names a different property in every calendar a removal shifted, and it SHALL be used only where iCalendar gives the property no identity.
 
 #### Scenario: One alarm, one contested key
 - GIVEN two sides setting a different trigger on the same alarm
 - WHEN the document is projected
 - THEN one alarm table is written, its trigger contested and its other keys written once
+
+#### Scenario: A removal beside a contested attendee
+- GIVEN a local side removing one attendee and answering as another, and a remote side answering differently as that other
+- WHEN the document is projected
+- THEN the surviving attendee's answer is contested in the one table it wrote
 
 ### Requirement: Deciding a collision keeps what the document never showed
 Folding an edited document back SHALL keep every parameter of a modelled property that the projection does not show, in the place it held on the line. A parameter the projection does show SHALL be the document's: taken from the edited value, and dropped where the document cleared it.
@@ -117,3 +154,13 @@ A property's lines are paired with the document's by position, which is how the 
 - GIVEN a merged document with an attendee's status emptied
 - WHEN the document is applied
 - THEN the status parameter is gone and the rest of the line is unchanged
+
+### Requirement: A header note wraps at the document's column
+A note written into the document header SHALL wrap at the same column the header itself uses, its `#` prefix included, and a continuation line SHALL be indented under the text of its bullet rather than under the bullet mark.
+
+The header is prose a person reads before anything else, and a line running past the width the rest of the document keeps is the one part of the document that can leave the screen.
+
+#### Scenario: A note longer than the column
+- GIVEN a note whose text passes the wrapping column
+- WHEN the document is projected
+- THEN it is written over two comment lines, the second indented under the first line's text

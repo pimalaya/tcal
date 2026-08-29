@@ -7,9 +7,9 @@
 //! drop the `.ics` in and generate the `.toml` with `tcal template`.
 //!
 //! Projection is deterministic, so equality is asserted for every fixture.
-//! Round-trip is checked only for fixtures whose source is already in
-//! calcard's canonical form (no `.lossy` marker file): real exports often
-//! reorder `RRULE` tokens or reformat values on read, which apply then
+//! Round-trip is checked only for fixtures whose source is already in the
+//! form the projection writes back (no `.lossy` marker file): a real export
+//! often orders an RRULE's tokens its own way, which apply then
 //! canonicalises, so byte-exact round-trip is not expected there.
 
 use std::{fs, path::Path};
@@ -54,8 +54,9 @@ fn fixtures_project_and_round_trip() {
             path.display()
         );
 
-        // Untouched, the projection folds back onto the source byte-for-byte,
-        // unless the source is flagged `.lossy` (calcard canonicalises it).
+        // Untouched, the projection folds back onto the source byte for
+        // byte, unless a `.lossy` marker says the source is not in the form
+        // the projection writes back.
         if !dir.join(format!("{name}.lossy")).exists() {
             let round_trip = tcal::template::apply_with(&ics, &expected, &flags(mode)).unwrap();
             assert_eq!(round_trip, ics, "round-trip mismatch: {}", path.display());

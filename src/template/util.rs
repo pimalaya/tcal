@@ -1,5 +1,13 @@
-//! Small value helpers shared across projection and apply: TOML rendering,
-//! iCalendar text escaping, and reading calcard entry values.
+//! # Value helpers
+//!
+//! The small conversions projection and apply share: rendering TOML scalars,
+//! and reading a content line's value and parameters.
+//!
+//! A line is read through its logical form rather than through the syntax
+//! tree's own split, because RFC 5545 section 3.1 ends the head at the first
+//! colon outside a quoted parameter value and the tree's split is not quoted.
+//! The same [`crate::template::patch`] grammar reads a line here and patches
+//! it there, so what the projection shows and what a fold-back writes agree.
 
 use alloc::{
     borrow::ToOwned,
@@ -8,8 +16,13 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::{ICalendarEntry, ICalendarParameterName, ICalendarValue};
+use ical::tree::line::IcalLine;
 use toml_edit::{Array, Item, TableLike, Value};
+
+use crate::{
+    ical::logical,
+    template::patch::{head, split, value_of},
+};
 
 /// Render a string as a quoted, escaped TOML scalar.
 pub fn toml_str(value: &str) -> String {
@@ -67,6 +80,28 @@ pub fn escape(value: &str) -> String {
     out
 }
 
+/// Undo that escaping, the inverse of [`escape`]: what a calendar wrote as
+/// `\,` is a comma, and either spelling of an escaped newline is one.
+pub fn unescape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('n' | 'N') => out.push('\n'),
+            Some(next) => out.push(next),
+            None => out.push('\\'),
+        }
+    }
+
+    out
+}
+
 /// Append `;NAME=value` to `line` when the table entry is non-empty,
 /// quoting on a parameter delimiter. `upper` uppercases closed vocabularies
 /// (`ROLE`, `PARTSTAT`).
@@ -113,43 +148,68 @@ pub fn tables(item: &Item) -> Vec<&dyn TableLike> {
     }
 }
 
-/// First value of an entry as text, falling back to its owned text form for
-/// typed values (integers, durations, recurrence rules, ...).
-pub fn scalar_text(entry: &ICalendarEntry) -> String {
-    if let Some(text) = entry.values.first().and_then(|value| value.as_text()) {
-        return text.to_owned();
+/// The value a line carries, still escaped: everything after the colon that
+/// ends its name and parameters, one inside a quoted parameter value not
+/// counting.
+///
+/// This is the form a structured value (a recurrence rule) is read in, its
+/// own separators being its syntax rather than the calendar's.
+pub fn raw(line: &IcalLine<'_>) -> String {
+    value_of(&logical(line)).to_owned()
+}
+
+/// A line's value as one unescaped string, its commas kept literal.
+///
+/// A single-valued property is one value however it is punctuated, so a comma
+/// inside a URI or an unescaped one inside a summary stays in the value rather
+/// than truncating it.
+pub fn text(line: &IcalLine<'_>) -> String {
+    unescape(&raw(line))
+}
+
+/// A line's value as its comma-separated items, each unescaped on its own.
+pub fn items(line: &IcalLine<'_>) -> Vec<String> {
+    let raw = raw(line);
+
+    split_items(&raw).into_iter().map(unescape).collect()
+}
+
+/// The first value of a named parameter, the quotes it may be written with
+/// stripped (RFC 5545 section 3.2).
+pub fn param(line: &IcalLine<'_>, name: &str) -> Option<String> {
+    let logical = logical(line);
+
+    split(head(&logical), ';')
+        .into_iter()
+        .skip(1)
+        .find_map(|param| {
+            let (held, value) = param.split_once('=')?;
+
+            held.eq_ignore_ascii_case(name)
+                .then(|| value.trim_matches('"').to_owned())
+        })
+}
+
+/// Split a value on its unescaped commas, an escaped one staying inside the
+/// item it belongs to.
+fn split_items(value: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut escaped = false;
+
+    for (at, ch) in value.char_indices() {
+        match ch {
+            '\\' if !escaped => escaped = true,
+            ',' if !escaped => {
+                out.push(&value[start..at]);
+                start = at + 1;
+            }
+            _ => escaped = false,
+        }
     }
 
-    entry
-        .values
-        .first()
-        .cloned()
-        .and_then(|value| value.into_text())
-        .map(|text| text.into_owned())
-        .unwrap_or_default()
-}
-
-/// First value of an entry as borrowed text.
-pub fn entry_text(entry: &ICalendarEntry) -> Option<&str> {
-    entry.values.first().and_then(|value| value.as_text())
-}
-
-/// A value as text, falling back to its owned form for typed values
-/// (durations, periods, ...) that have no borrowed text.
-pub fn value_text(value: &ICalendarValue) -> Option<String> {
-    value
-        .as_text()
-        .map(str::to_owned)
-        .or_else(|| value.clone().into_text().map(|text| text.into_owned()))
-}
-
-/// First value of a named parameter as owned text.
-pub fn param(entry: &ICalendarEntry, name: &ICalendarParameterName) -> Option<String> {
-    entry
-        .parameters(name)
-        .next()
-        .and_then(|value| value.as_text())
-        .map(str::to_owned)
+    out.push(&value[start..]);
+    out
 }
 
 /// A calendar address without its `mailto:` scheme (any case), for display.

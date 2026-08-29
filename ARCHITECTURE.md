@@ -8,19 +8,21 @@ If a statement here conflicts with the code, the code wins; please flag it.
 
 tcal is a **dual library/CLI** crate (org ARCHITECTURE section 4), but a small and unusual one: it does **no I/O of its own and has no protocol or storage logic**, so it has no coroutines and no `client` layer. It is a pure, total function over strings: iCalendar text in, TOML text out, and back. The two layers are therefore:
 
-1. **`no_std` core** (no features): the projection between an iCalendar and an ergonomic TOML buffer (`ical`, `template`, `edit`, `error`), plus the three-way merge over it (`merge`) behind the opt-in `merge` feature, which is the only thing that links a second iCalendar library.
+1. **`no_std` core** (no features): the projection between an iCalendar and an ergonomic TOML buffer (`ical`, `template`, `error`), plus the three-way merge over it (`merge`).
 2. **CLI** (`cli` feature): the binary and its three verbs, plus the `$EDITOR` integration and `std`.
 
 The "sans-I/O" principle still holds, trivially: the core never touches the filesystem, clock or network. The CLI is the only place that reads files, the clock (for `DTSTAMP`) and `$EDITOR`.
 
 ## The two directions
 
-tcal converts between a [calcard](https://crates.io/crates/calcard) `ICalendar` and a TOML buffer in two directions:
+tcal converts between a calendar and a TOML buffer in two directions:
 
-- **`project` / `project_with`** (read): turn an `ICalendar` into a fillable, commented TOML scaffold. calcard is the reader; it parses and validates values.
+- **`project` / `project_with`** (read): turn a calendar into a fillable, commented TOML scaffold.
 - **`apply` / `apply_with`** (write): fold an edited TOML buffer back onto the **original iCalendar text**.
 
-The central decision is that **calcard is used as a reader only**. Its writer normalises folding, parameter casing and property order, so re-serialising a calendar churns lines nobody touched. Instead `apply` patches the original bytes through `crate::edit`, an in-house format-preserving editor (the `toml_edit` analog for iCalendar): it keeps every content line's original bytes and re-renders only the lines whose modeled value actually changed. Its invariant is `Calendar::parse(s).to_string() == s` for any input; on top of it, projecting then applying an untouched buffer reproduces the source byte-for-byte. Everything tcal does not model (other properties, other component types, `UID`, `DTSTAMP`, `SEQUENCE`, `X-*`, folding, casing, order) is carried through verbatim.
+The central decision is that **a body is read once, and only by [ical-rs](https://crates.io/crates/ical-rs)**. Its syntax tree is byte-faithful: parsing and writing back reproduces the input exactly, folds, parameter casing, property order and line endings included. `crate::ical` wraps it with the two edits a fold-back makes, setting a property's lines and counting a component's children, and only a line whose modelled value actually changed is written anew. Everything tcal does not model (other properties, other component types, `UID`, `DTSTAMP`, `SEQUENCE`, `X-*`) is carried through verbatim.
+
+Reading once is what makes that guarantee real. A second reader would parse the same body into a second model, and a value it normalised on the way in (an escape, a date spelling) would reach the document already changed, with no test able to see it: the document would match what the second reader said, and the calendar would say something else.
 
 This is why `apply` always needs the original text, not just the edited TOML: the TOML is an editing affordance, not an interchange format.
 
@@ -46,9 +48,9 @@ The key guarantee: `apply` only reconciles the selected types, so a filtered edi
 
 ## The merge bridge
 
-`merge.rs` is the one place where a second iCalendar library is linked: the three-way merge lives in [ical-rs](https://crates.io/crates/ical-rs), over a byte-faithful syntax tree of its own. The bridge is deliberately narrow. `Merge::project` parses the three sides with ical-rs, runs `IcalMerge`, serialises the merged tree back to iCalendar text, and from there everything is the usual calcard path: that text is the source the projection reads and the source `apply` patches, so the merge adds no second writer and no second model.
+The three-way merge is ical-rs's, over the same syntax tree the projection walks. `Merge::project` parses the three sides, runs `IcalMerge`, and projects the merged tree as it stands: it is written out to iCalendar text as the source `apply` patches, but never read back, so what the reader decides is what the reconciliation produced.
 
-The merge report is used for two things only. Its conflicts are addressed onto projected keys, by walking the merged calcard calendar along the merge's component path (`UID`, then `RECURRENCE-ID`, then position among same-named siblings) to a `Spec` and a `Field`. Each side's spelling of a contested field is then rendered by the same `Field::lines` the projection uses, so a choice and the document around it are written by one code path.
+The merge report is used for two things only. Its conflicts are addressed onto projected keys, by walking the merged calendar along the merge's component path (`UID`, then `RECURRENCE-ID`, then position among same-named siblings) to a `Spec` and a `Field`, and then to the property itself by the identity the report carries (an attendee's calendar address) rather than by a position, which either side's own removal moves. Each side's spelling of a contested field is rendered by the same `Field::lines` the projection uses, so a choice and the document around it are written by one code path.
 
 The local side is the merge's right side: the edited one, whose changes are replayed and on whose behalf `--speaks-for` claims authority. It is also the preferred side, so a collision the merge cannot settle holds the local value in the merged bytes, and the document asks rather than assumes. Being replayed is what makes the local side judgeable; being preferred is what stops that judgement costing it every collision, which is the same value tCard keeps with local on the left.
 
@@ -56,38 +58,34 @@ The local side is the merge's right side: the edited one, whose changes are repl
 
 ```
 src/
-  lib.rs                 no_std setup, module + feature wiring
+  lib.rs                 the architecture header, no_std setup, module wiring
+  main.rs                [cli] binary entry point: parse, log, print, dispatch
   error.rs               TcalError + Result
-  ical.rs                calcard parse adapter (text -> ICalendar)
-  merge.rs               [merge] three-way merge projected as a document to decide
-  cli.rs                 [cli] binary: Cli/Command, template, edit & merge verbs
+  ical.rs                the one reader, plus the edits a fold-back makes
+  merge.rs               three-way merge projected as a document to decide
+  cli.rs                 [cli] Cli/Command, the template, edit & merge verbs
   template.rs            projection/apply engine + facade + unit tests
   template/
     model.rs             Kind, Field, Spec, the static field tables, TOP_LEVEL
     line.rs              Line + tab-aligned comment emission
     patch.rs             patch a content line, keeping the parameters not shown
-    util.rs              TOML / escape / calcard-value helpers
+    util.rs              TOML rendering, escaping, reading a line's value
     datetime.rs          friendly date-times <-> iCalendar digits, offsets
     duration.rs          DURATION / TRIGGER <-> dotted duration.* keys
     recurrence.rs        RRULE <-> dotted recurrence.* keys
-  edit.rs                module root for the format-preserving editor
-  edit/
-    tree.rs              Calendar/Component/Property/Container + Nodes DOM
-    parse.rs             Parser: unfold + build the tree
-    render.rs            fold content lines, detect end-of-line
 ```
 
 `template.rs` holds the public facade (`project`, `project_with`, `project_one`, `apply`, `apply_with`) and the projection/apply orchestration; the submodules hold the model and the per-domain value conversions.
 
 ## The golden fixture database
 
-`tests/data/` is a regression database of real and crafted calendars, checked by `tests/fixtures.rs`. Each `<name>.<mode>.toml` is the expected projection of `<name>.ics` for `<mode>` (`all`, or `_`-joined type keys like `event`). The runner asserts `project_with == toml` for every fixture, and a byte-exact round-trip (`apply_with` reproduces the source) unless a `<name>.lossy` marker says the source is not already in calcard's canonical form. Real-world exports are the most valuable cases; adding one is the fastest way to turn a bug report into a test (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+`tests/data/` is a regression database of real and crafted calendars, checked by `tests/fixtures.rs`. Each `<name>.<mode>.toml` is the expected projection of `<name>.ics` for `<mode>` (`all`, or `_`-joined type keys like `event`). The runner asserts `project_with == toml` for every fixture, and a byte-exact round-trip (`apply_with` reproduces the source) unless a `<name>.lossy` marker says the source is not already in the form the projection writes back. Real-world exports are the most valuable cases; adding one is the fastest way to turn a bug report into a test (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 ## Known limitations
 
 These are deliberate (or pending), and explain the `.lossy` markers:
 
-- **RRULE canonicalisation**: calcard reorders `RRULE` tokens on read (`FREQ, UNTIL, COUNT, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, BYSETPOS, WKST`), so a rule in another order round-trips canonicalised, not byte-exact.
+- **RRULE canonicalisation**: a rule is written back with its tokens in one order (`FREQ, UNTIL, COUNT, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, BYSETPOS, WKST`), so a rule written in another order round-trips canonicalised, not byte-exact.
 - **All-day `VALUE=DATE`**: an all-day date written without the parameter (`DTSTART:20220101`) is re-emitted RFC-correct (`DTSTART;VALUE=DATE:20220101`).
 - **Attendee parameters**: only `CN`/`ROLE`/`PARTSTAT` are modeled, so only those can be edited; the others (`RSVP`, `CUTYPE`, ...) are kept on the line as they were.
 - **List parameters**: `CATEGORIES` / `FREEBUSY` parameters (such as `FBTYPE`) are not modeled, so they cannot be edited, only kept.

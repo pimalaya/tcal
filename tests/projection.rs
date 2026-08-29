@@ -5,11 +5,8 @@
 //! the folded calendar again must give the very same document, and a
 //! property the vocabulary does not model must come out the other side byte
 //! for byte. The generator below builds calendars out of the modelled
-//! vocabulary in calcard's canonical spelling, so a failure is the
-//! projection's and not the writer's.
-//!
-//! The laws that do not hold today are kept here as ignored tests, each
-//! naming the finding that reproduces it.
+//! vocabulary in the spelling the projection writes back, so a failure is
+//! the projection's and not the writer's.
 
 use proptest::prelude::*;
 
@@ -42,7 +39,7 @@ fn calendar(lines: &[String]) -> String {
 }
 
 /// Escape a text value the way RFC 5545 section 3.3.11 asks, which is how
-/// calcard writes one back.
+/// the projection writes one back.
 fn escape(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -74,16 +71,6 @@ fn value() -> impl Strategy<Value = String> {
     .prop_filter("a value is not empty", |text| !text.is_empty())
 }
 
-/// A value fit for a comma-separated list, which is [`value`] without the
-/// characters that need escaping: an escape inside such an item does not
-/// survive the read, so the generator leaves that case to the ignored law
-/// below rather than failing on it everywhere.
-fn list_value() -> impl Strategy<Value = String> {
-    value().prop_filter("a list item needs no escaping", |text| {
-        !text.contains([',', ';', '\\'])
-    })
-}
-
 /// A calendar address, which the projection writes without its scheme.
 fn address() -> impl Strategy<Value = String> {
     "[a-z]{3,6}@example\\.com".prop_map(String::from)
@@ -111,13 +98,12 @@ fn extension_line() -> impl Strategy<Value = String> {
 
 prop_compose! {
     /// An iCalendar file holding one event built from the modelled
-    /// vocabulary, written the way calcard writes one, plus a few properties
-    /// outside that vocabulary.
+    /// vocabulary, plus a few properties outside it.
     fn ical()(
         summary in value(),
         description in prop::option::of(value()),
         location in prop::option::of(value()),
-        categories in prop::collection::vec(list_value(), 0..3),
+        categories in prop::collection::vec(value(), 0..3),
         priority in prop::option::of(1..9u8),
         status in prop::option::of(prop::sample::select(vec!["TENTATIVE", "CONFIRMED", "CANCELLED"])),
         class in prop::option::of(prop::sample::select(vec!["PUBLIC", "PRIVATE", "CONFIDENTIAL"])),
@@ -184,8 +170,8 @@ prop_compose! {
 proptest! {
     /// The foundation: an untouched projection folds back onto the calendar
     /// it came from, byte for byte. Every other law rests on this one, and a
-    /// calendar written in calcard's own canonical form has nothing to
-    /// renormalise, so the comparison can be exact.
+    /// calendar written in the form the projection writes back has nothing
+    /// to renormalise, so the comparison can be exact.
     #[test]
     fn folding_an_untouched_projection_changes_nothing(src in ical()) {
         prop_assert_eq!(round_trip(&src), src.clone());
@@ -269,15 +255,31 @@ fn a_modelled_property_keeps_its_unshown_parameters() {
 }
 
 /// An escape inside a multi-valued item comes back as it was, rather than
-/// eating the space behind it.
-///
-/// See findings/tcard-tcal-escape-eats-a-space.md.
+/// eating the space behind it: one reader reads the value, and the escaping
+/// it undoes is the one the projection puts back.
 #[test]
-#[ignore = "fails: see findings/tcard-tcal-escape-eats-a-space.md"]
 fn an_escape_in_a_list_item_keeps_the_space_behind_it() {
     for escaped in ["\\,", "\\;", "\\\\"] {
         let src = calendar(&[format!("CATEGORIES:a{escaped}  b")]);
 
         assert_eq!(round_trip(&src), src);
     }
+}
+
+/// A file holding more than one calendar keeps the ones the projection never
+/// showed: only the first is read, and the rest come out as they went in.
+#[test]
+fn a_calendar_beside_the_one_being_read_survives() {
+    let second = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Other//EN\r\n\
+        BEGIN:VEVENT\r\nUID:e2@example\r\nDTSTAMP:20260101T000000Z\r\n\
+        SUMMARY:Untouched\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let src = format!("{}{second}", calendar(&["SUMMARY:Lunch".to_owned()]));
+
+    assert_eq!(round_trip(&src), src);
+
+    let edited = project(&src).replace("Lunch", "Team lunch");
+    let out = tcal::template::apply(&src, &edited).unwrap();
+
+    assert!(out.contains("SUMMARY:Team lunch"), "{out}");
+    assert!(out.ends_with(second), "{out}");
 }

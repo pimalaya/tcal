@@ -1,3 +1,12 @@
+//! # tCal
+//!
+//! Binary entry point of the tCal CLI. It parses the command-line interface
+//! declared in [`tcal::cli`], wires the logger and the printer from the shared
+//! pimalaya-cli toolkit, then hands control to the parsed command.
+//!
+//! Everything below this file lives in the library, whose own header carries
+//! the crate architecture: see [`tcal`].
+
 use anyhow::Result;
 use clap::Parser;
 use pimalaya_cli::{error::ErrorReport, log::Logger, printer::StdoutPrinter};

@@ -1,19 +1,22 @@
-//! Projection between a calcard [`ICalendar`] and an ergonomic TOML buffer.
+//! # Projection
+//!
+//! Between a calendar and an ergonomic TOML buffer, in both directions.
 //!
 //! [`project`] renders the calendar as fillable `[[block]]`s; [`project_with`]
 //! narrows to chosen types (one flattens at the root, the [`project_one`]
 //! view). [`apply`] / [`apply_with`] fold an edited buffer back onto the
-//! original text through the format-preserving [`crate::edit`], touching only
-//! changed lines and keeping everything unmodeled or unselected byte-for-byte.
-//! The modeled vocabulary lives in [`model`]; value conversions in [`datetime`],
-//! [`duration`], [`recurrence`]. `UID` and `DTSTAMP` are app-managed, not
-//! modeled.
+//! original text through [`crate::ical`], touching only changed lines and
+//! keeping everything unmodelled or unselected byte for byte.
+//!
+//! The modelled vocabulary lives in the model submodule, and the values with
+//! a shape of their own in datetime, duration and recurrence. `UID` and
+//! `DTSTAMP` are app-managed, not modelled.
 
 mod datetime;
 mod duration;
 pub(crate) mod line;
 pub(crate) mod model;
-mod patch;
+pub(crate) mod patch;
 mod recurrence;
 pub(crate) mod util;
 
@@ -25,24 +28,22 @@ use alloc::{
     vec::Vec,
 };
 
-use calcard::icalendar::{
-    ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry, ICalendarParameterName,
-};
+use ical::tree::{cst::IcalCst, line::IcalLine};
 use toml_edit::{DocumentMut, TableLike};
 
 use crate::{
-    edit::tree::{Calendar, Component, Container},
     error::{Result, TcalError},
+    ical::{Calendar, Component, Container, children, named, nested, props},
     template::{
         line::{Line, comment_column, emit_lines},
         model::{Field, Kind, Spec, TOP_LEVEL, VEVENT},
-        util::{entry_text, param, strip_mailto, tables, toml_str},
+        util::{param, strip_mailto, tables, text, toml_str},
     },
 };
 
 /// Project the whole calendar: every modeled type as a `[[block]]`, actual
 /// instances filled and one empty example per absent type.
-pub fn project(ical: &ICalendar) -> String {
+pub fn project(ical: &Calendar<'_>) -> String {
     project_filtered(ical, TOP_LEVEL)
 }
 
@@ -52,7 +53,7 @@ pub fn project(ical: &ICalendar) -> String {
 /// type flattens it as the document root (bare keys, no wrapper); two or
 /// more keep the `VCALENDAR` root but show only the chosen types. The
 /// unshown types are never lost: [`apply_with`] leaves them untouched.
-pub fn project_with(ical: &ICalendar, types: &[String]) -> Result<String> {
+pub fn project_with(ical: &Calendar<'_>, types: &[String]) -> Result<String> {
     let specs = resolve_specs(types)?;
 
     Ok(if specs.is_empty() {
@@ -66,7 +67,7 @@ pub fn project_with(ical: &ICalendar, types: &[String]) -> Result<String> {
 
 /// Project the given component specs as `[[block]]`s under the `VCALENDAR`
 /// root: each instance filled, plus one empty example per absent type.
-fn project_filtered(ical: &ICalendar, specs: &[&Spec]) -> String {
+fn project_filtered(ical: &Calendar<'_>, specs: &[&Spec]) -> String {
     let mut out = String::new();
 
     out.push_str("# iCalendar as TOML, edited by tcal.\n");
@@ -79,17 +80,17 @@ fn project_filtered(ical: &ICalendar, specs: &[&Spec]) -> String {
     let tops = top_level(ical);
 
     for spec in specs {
-        let instances: Vec<&ICalendarComponent> = tops
+        let instances: Vec<&IcalCst<'_>> = tops
             .iter()
             .copied()
-            .filter(|component| component.component_type.as_str() == spec.name)
+            .filter(|component| named(component, spec.name))
             .collect();
 
         if instances.is_empty() {
-            project_component(&mut out, ical, None, spec, Some(spec.key));
+            project_component(&mut out, None, spec, Some(spec.key));
         } else {
             for component in instances {
-                project_component(&mut out, ical, Some(component), spec, Some(spec.key));
+                project_component(&mut out, Some(component), spec, Some(spec.key));
             }
         }
     }
@@ -101,7 +102,7 @@ fn project_filtered(ical: &ICalendar, specs: &[&Spec]) -> String {
 /// keys at the top level, sections like `[[attendee]]` / `[[alarm]]`, no
 /// wrapping header. The first component of that type fills it, or an empty
 /// example when there is none.
-pub fn project_one(ical: &ICalendar, ty: &str) -> Result<String> {
+pub fn project_one(ical: &Calendar<'_>, ty: &str) -> Result<String> {
     let spec = TOP_LEVEL
         .iter()
         .copied()
@@ -112,10 +113,10 @@ pub fn project_one(ical: &ICalendar, ty: &str) -> Result<String> {
 }
 
 /// Render one component spec flat at the document root (see [`project_one`]).
-fn project_one_spec(ical: &ICalendar, spec: &Spec) -> String {
+fn project_one_spec(ical: &Calendar<'_>, spec: &Spec) -> String {
     let component = top_level(ical)
         .into_iter()
-        .find(|component| component.component_type.as_str() == spec.name);
+        .find(|component| named(component, spec.name));
 
     let mut out = String::new();
     out.push_str("# iCalendar ");
@@ -127,7 +128,7 @@ fn project_one_spec(ical: &ICalendar, spec: &Spec) -> String {
     out.push_str("# verbatim, not shown here.\n");
     out.push('\n');
 
-    project_component(&mut out, ical, component, spec, None);
+    project_component(&mut out, component, spec, None);
     out
 }
 
@@ -170,14 +171,13 @@ fn apply_specs(original_src: &str, edited_toml: &str, filter: &[&Spec]) -> Resul
     // single component whose keys sit at the document top level.
     let blocky = TOP_LEVEL.iter().any(|spec| doc.contains_key(spec.key));
 
-    let mut cal = Calendar::parse(original_src);
+    let mut cal = crate::ical::parse(original_src)?;
 
-    // Components live inside the VCALENDAR when there is one, else at the
-    // document root (a bare component stream).
-    if let Some(vcalendar) = cal.component_mut("VCALENDAR") {
-        reconcile(vcalendar, &doc, blocky, filter);
-    } else {
-        reconcile(&mut cal, &doc, blocky, filter);
+    // Components live inside the VCALENDAR when there is one, else beside it
+    // in the stream (a bare component with no calendar around it).
+    match cal.0.first() {
+        Some(root) if named(root, "VCALENDAR") => reconcile(&mut cal.0[0], &doc, blocky, filter),
+        _ => reconcile(&mut cal, &doc, blocky, filter),
     }
 
     Ok(cal.to_string())
@@ -188,12 +188,17 @@ fn apply_specs(original_src: &str, edited_toml: &str, filter: &[&Spec]) -> Resul
 /// In block mode each selected type's `[[block]]`s reconcile; an empty
 /// selection reconciles every type. Types outside the selection are left
 /// untouched, so a filtered view never drops them.
-fn reconcile<C: Container>(container: &mut C, doc: &DocumentMut, blocky: bool, filter: &[&Spec]) {
+fn reconcile<'a, C: Container<'a>>(
+    container: &mut C,
+    doc: &DocumentMut,
+    blocky: bool,
+    filter: &[&Spec],
+) {
     if !blocky {
         let spec = filter.first().copied().unwrap_or(&VEVENT);
         let count = usize::from(block_has_content(doc.as_table(), spec));
-        container.set_component_count(spec.name, count);
-        if let Some(component) = container.components_mut(spec.name).next() {
+        container.set_child_count(spec.name, count);
+        if let Some(component) = container.children(spec.name).next() {
             apply_component(component, doc.as_table(), spec);
         }
         return;
@@ -214,8 +219,8 @@ fn reconcile<C: Container>(container: &mut C, doc: &DocumentMut, blocky: bool, f
             .filter(|table| block_has_content(*table, spec))
             .collect();
 
-        container.set_component_count(spec.name, blocks.len());
-        for (component, table) in container.components_mut(spec.name).zip(blocks) {
+        container.set_child_count(spec.name, blocks.len());
+        for (component, table) in container.children(spec.name).zip(blocks) {
             apply_component(component, table, spec);
         }
     }
@@ -226,15 +231,11 @@ fn reconcile<C: Container>(container: &mut C, doc: &DocumentMut, blocky: bool, f
 ///
 /// Each field is folded onto the lines the component already holds for it,
 /// so a parameter the document does not show survives.
-fn apply_component(component: &mut Component, table: &dyn TableLike, spec: &Spec) {
+fn apply_component<'a>(component: &mut IcalCst<'a>, table: &dyn TableLike, spec: &Spec) {
     for field in spec.fields {
-        let originals: Vec<String> = component
-            .get_all(field.name)
-            .into_iter()
-            .map(ToOwned::to_owned)
-            .collect();
+        let originals = component.lines(field.name);
 
-        component.set_all(field.name, &field.content_lines(table, &originals));
+        component.set_lines(field.name, &field.content_lines(table, &originals));
     }
 
     for child in spec.children {
@@ -246,9 +247,9 @@ fn apply_component(component: &mut Component, table: &dyn TableLike, spec: &Spec
             .filter(|nested| block_has_content(*nested, child))
             .collect();
 
-        component.set_component_count(child.name, blocks.len());
-        for (nested, nested_table) in component.components_mut(child.name).zip(blocks) {
-            apply_component(nested, nested_table, child);
+        component.set_child_count(child.name, blocks.len());
+        for (kid, kid_table) in component.children(child.name).zip(blocks) {
+            apply_component(kid, kid_table, child);
         }
     }
 }
@@ -268,7 +269,7 @@ fn field_group(field: &Field) -> (u8, &str) {
 
 /// Render one attendee block under `header` (e.g. `event.attendee`),
 /// filled or empty.
-fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&ICalendarEntry>) {
+fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&IcalLine<'_>>) {
     lines.push(Line {
         lhs: format!("[[{header}]]"),
         hint: None,
@@ -280,28 +281,23 @@ fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&ICalendarE
 /// The keys of one attendee block, without its `[[header]]` line: what a
 /// merge writes when two sides contest one attendee, since repeating the
 /// header would make a second attendee rather than a duplicate key.
-pub(crate) fn attendee_keys(entry: Option<&ICalendarEntry>) -> Vec<Line> {
+pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>) -> Vec<Line> {
     let mut lines = Vec::new();
 
-    let display_name = entry
-        .and_then(|entry| param(entry, &ICalendarParameterName::Cn))
-        .unwrap_or_default();
+    let display_name = entry.and_then(|line| param(line, "CN")).unwrap_or_default();
     lines.push(Line {
         lhs: format!("display-name = {}", toml_str(&display_name)),
         hint: None,
     });
 
-    let value = entry
-        .and_then(entry_text)
-        .map(strip_mailto)
-        .unwrap_or_default();
+    let value = entry.map(text).unwrap_or_default();
     lines.push(Line {
-        lhs: format!("value = {}", toml_str(value)),
+        lhs: format!("value = {}", toml_str(strip_mailto(&value))),
         hint: Some("email address".to_owned()),
     });
 
     let role = entry
-        .and_then(|entry| param(entry, &ICalendarParameterName::Role))
+        .and_then(|line| param(line, "ROLE"))
         .unwrap_or_default();
     lines.push(Line {
         lhs: format!("role = {}", toml_str(&role)),
@@ -309,7 +305,7 @@ pub(crate) fn attendee_keys(entry: Option<&ICalendarEntry>) -> Vec<Line> {
     });
 
     let status = entry
-        .and_then(|entry| param(entry, &ICalendarParameterName::Partstat))
+        .and_then(|line| param(line, "PARTSTAT"))
         .unwrap_or_default();
     lines.push(Line {
         lhs: format!("status = {}", toml_str(&status)),
@@ -319,55 +315,38 @@ pub(crate) fn attendee_keys(entry: Option<&ICalendarEntry>) -> Vec<Line> {
     lines
 }
 
-/// The top-level components of an iCalendar (the `VCALENDAR`'s children),
-/// or the lone component of a bare stream.
-pub(crate) fn top_level(ical: &ICalendar) -> Vec<&ICalendarComponent> {
-    let Some(root) = ical.components.first() else {
+/// The top-level components of a calendar (the `VCALENDAR`'s children), or
+/// the lone component of a bare stream.
+pub(crate) fn top_level<'c, 'a>(ical: &'c Calendar<'a>) -> Vec<&'c IcalCst<'a>> {
+    let Some(root) = ical.read() else {
         return Vec::new();
     };
 
-    if root.component_type == ICalendarComponentType::VCalendar {
-        root.component_ids
-            .iter()
-            .filter_map(|id| ical.components.get(*id as usize))
-            .collect()
+    if named(root, "VCALENDAR") {
+        nested(root).collect()
     } else {
         vec![root]
     }
 }
 
-/// The entries of a component matching a field's name (empty when the
-/// component is absent, for example blocks).
-pub(crate) fn entries_for<'a>(
-    component: Option<&'a ICalendarComponent>,
+/// The lines of a component writing a field's property (empty when the
+/// component is absent, as an empty block's is).
+pub(crate) fn entries_for<'c, 'a>(
+    component: Option<&'c IcalCst<'a>>,
     field: &Field,
-) -> Vec<&'a ICalendarEntry> {
+) -> Vec<&'c IcalLine<'a>> {
     component
-        .map(|component| {
-            component
-                .entries
-                .iter()
-                .filter(|entry| entry.name.as_str() == field.name)
-                .collect()
-        })
+        .map(|component| props(component, field.name).collect())
         .unwrap_or_default()
 }
 
 /// The child components of `component` matching a child spec's type.
-pub(crate) fn child_components<'a>(
-    ical: &'a ICalendar,
-    component: Option<&ICalendarComponent>,
+pub(crate) fn child_components<'c, 'a>(
+    component: Option<&'c IcalCst<'a>>,
     child: &Spec,
-) -> Vec<&'a ICalendarComponent> {
+) -> Vec<&'c IcalCst<'a>> {
     component
-        .map(|component| {
-            component
-                .component_ids
-                .iter()
-                .filter_map(|id| ical.components.get(*id as usize))
-                .filter(|nested| nested.component_type.as_str() == child.name)
-                .collect()
-        })
+        .map(|component| children(component, child.name).collect())
         .unwrap_or_default()
 }
 
@@ -376,8 +355,7 @@ pub(crate) fn child_components<'a>(
 /// `[[prefix.key]]` blocks, recursively.
 fn project_component(
     out: &mut String,
-    ical: &ICalendar,
-    component: Option<&ICalendarComponent>,
+    component: Option<&IcalCst<'_>>,
     spec: &Spec,
     prefix: Option<&str>,
 ) {
@@ -425,14 +403,14 @@ fn project_component(
     }
 
     for child in spec.children {
-        let nested = child_components(ical, component, child);
+        let kids = child_components(component, child);
         let child_prefix = section_header(prefix, child.key);
 
-        if nested.is_empty() {
-            project_component(out, ical, None, child, Some(&child_prefix));
+        if kids.is_empty() {
+            project_component(out, None, child, Some(&child_prefix));
         } else {
-            for kid in nested {
-                project_component(out, ical, Some(kid), child, Some(&child_prefix));
+            for kid in kids {
+                project_component(out, Some(kid), child, Some(&child_prefix));
             }
         }
     }
@@ -449,7 +427,7 @@ fn section_header(prefix: Option<&str>, key: &str) -> String {
 
 /// Render an attendee field as `[[header]]` blocks, one per entry, or a
 /// single empty example.
-fn attendee_section(entries: &[&ICalendarEntry], header: &str) -> Vec<Line> {
+fn attendee_section(entries: &[&IcalLine<'_>], header: &str) -> Vec<Line> {
     let mut lines = Vec::new();
 
     if entries.is_empty() {
@@ -953,8 +931,8 @@ mod tests {
     fn trigger_raw_fallback_for_date_time() {
         // An absolute date-time trigger is not a plain duration, so it
         // falls back to a raw key and is kept (not silently dropped) on
-        // apply, carrying the value the reader parsed and the parameter
-        // that types it, which the form never showed.
+        // apply, carrying the value as the calendar wrote it and the
+        // parameter that types it, which the form never showed.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             BEGIN:VALARM\r\nACTION:DISPLAY\r\n\
             TRIGGER;VALUE=DATE-TIME:20260101T120000Z\r\n\
@@ -963,14 +941,14 @@ mod tests {
 
         assert!(toml.contains("trigger.raw = "));
         let out = super::apply(src, &toml).unwrap();
-        assert!(out.contains("TRIGGER;VALUE=DATE-TIME:2026-01-01T12:00:00Z"));
+        assert_eq!(out, src);
     }
 
     #[test]
     fn timezone_offsets_round_trip() {
-        // calcard stores TZOFFSETFROM/TO as date-times; they must project as
-        // ±HHMM and survive apply, not get dropped (regression: real
-        // VTIMEZONE exports were losing their offsets).
+        // A UTC offset must project as the ±HHMM the calendar wrote and
+        // survive apply, not get dropped (regression: real VTIMEZONE
+        // exports were losing their offsets).
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n\
             BEGIN:STANDARD\r\nDTSTART:19701025T030000\r\nTZOFFSETFROM:+0200\r\n\
             TZOFFSETTO:+0100\r\nTZNAME:CET\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n";
@@ -983,9 +961,8 @@ mod tests {
 
     #[test]
     fn freebusy_periods_round_trip() {
-        // FREEBUSY periods are a Period value type (no borrowed text); they
-        // must project as period strings and survive apply, not vanish
-        // (regression, twin of the time-zone offset bug).
+        // FREEBUSY periods must project as period strings and survive
+        // apply, not vanish (regression, twin of the time-zone offset bug).
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VFREEBUSY\r\nUID:fb@x\r\n\
             DTSTART:19980101T000000Z\r\nDTEND:19980101T060000Z\r\n\
             FREEBUSY:19980101T010000Z/19980101T020000Z,19980101T030000Z/PT1H\r\n\

@@ -18,8 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
-cli = ["merge", "dep:anyhow", "dep:chrono", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
-merge = ["dep:ical-rs"]
+cli = ["dep:anyhow", "dep:chrono", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
 
 [profile.release]
 lto = "fat"
@@ -39,21 +38,20 @@ path = "src/lib.rs"
 [build-dependencies]
 pimalaya-cli = { version = "0.2", default-features = false, features = ["build"], optional = true }
 
+[dev-dependencies]
+proptest = "1"
+
 [dependencies]
 anyhow = { version = "1", optional = true }
-calcard = "0.3"
 chrono = { version = "0.4", optional = true }
 clap = { version = "4.4", features = ["derive", "env", "wrap_help"], optional = true }
 edit = { version = "0.1", optional = true }
-ical-rs = { version = "0.2", default-features = false, features = ["parser"], optional = true }
+ical-rs = { version = "0.2", default-features = false, features = ["parser"] }
 log = { version = "0.4", default-features = false }
 pimalaya-cli = { version = "0.2", default-features = false, features = ["prompt", "terminal"], optional = true }
 thiserror = { version = "2", default-features = false }
 toml_edit = "0.25"
 uuid = { version = "1", features = ["v4"], optional = true }
-
-[dev-dependencies]
-proptest = "1"
 
 [patch.crates-io]
 ical-rs.git = "https://github.com/pimalaya/ical"
