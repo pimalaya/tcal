@@ -50,7 +50,7 @@ The key guarantee: `apply` only reconciles the selected types, so a filtered edi
 
 The merge report is used for two things only. Its conflicts are addressed onto projected keys, by walking the merged calcard calendar along the merge's component path (`UID`, then `RECURRENCE-ID`, then position among same-named siblings) to a `Spec` and a `Field`. Each side's spelling of a contested field is then rendered by the same `Field::lines` the projection uses, so a choice and the document around it are written by one code path.
 
-The local side is the merge's right side: the edited one, whose changes are replayed and on whose behalf `--speaks-for` claims authority. A collision the merge cannot settle therefore holds the remote value in the merged bytes, and the document asks rather than assumes.
+The local side is the merge's right side: the edited one, whose changes are replayed and on whose behalf `--speaks-for` claims authority. It is also the preferred side, so a collision the merge cannot settle holds the local value in the merged bytes, and the document asks rather than assumes. Being replayed is what makes the local side judgeable; being preferred is what stops that judgement costing it every collision, which is the same value tCard keeps with local on the left.
 
 ## Module layout
 

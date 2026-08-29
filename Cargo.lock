@@ -538,8 +538,6 @@ dependencies = [
 [[package]]
 name = "ical-rs"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57dfe7f60fae970ab74c87919183324e496b7353022d1ef2ace21d6d63a85f92"
 dependencies = [
  "memchr",
 ]

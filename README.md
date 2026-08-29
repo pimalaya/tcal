@@ -222,7 +222,7 @@ Dates are native TOML values. Write a bare date (`2026-06-13`) for an all-day ev
 
 ### Why does `tcal merge` show some conflicts as comments rather than as a choice?
 
-Because the merge already decided them, and offering a decided thing as a choice asks you to undo something you cannot see the reasons for. Three settle themselves: a removal against an update, where the update wins whichever side it came from; a recurrence rule changed on one side while an overriding instance moved on the other, where both survive and you are only being warned that the rule may have moved the ground the instance stood on; and a change refused because `--speaks-for` says you are an attendee rather than the organiser of that meeting (RFC 5546 section 3.2). Everything else, where two values are genuinely in the running, is written as duplicate keys.
+Because the merge already decided them, and offering a decided thing as a choice asks you to undo something you cannot see the reasons for. Three settle themselves: a removal against an update, where the update wins whichever side it came from; a recurrence rule changed on one side while an overriding instance moved on the other, where both survive and you are only being warned that the rule may have moved the ground the instance stood on; and a change refused because `--speaks-for` says you are an attendee rather than the organiser of that meeting (RFC 5546 section 3.2). A fourth is a comment for a different reason: where a collision lands on something the document does not show, there is no key to write twice, so the comment says that the local value was kept. Everything else, where two values are genuinely in the running, is written as duplicate keys.
 
 ### How does `tcal edit` pick the editor?
 
