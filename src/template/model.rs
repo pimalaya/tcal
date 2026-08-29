@@ -16,6 +16,7 @@ use crate::template::{
     datetime::{DATE_HINT, date_line, ical_date, is_utc, offset_text, toml_date, toml_date_line},
     duration::{duration_lines, duration_value},
     line::Line,
+    patch,
     recurrence::{recur_lines, recur_rule},
     util::{
         ensure_mailto, entry_text, escape, push_param, scalar_text, strip_mailto, tables,
@@ -650,11 +651,32 @@ impl Field {
         }
     }
 
+    /// The parameter names this field's projection writes.
+    ///
+    /// They are the only ones folding a document back owns: every other
+    /// parameter on the line belongs to the line.
+    fn params(&self) -> &'static [&'static str] {
+        match self.kind {
+            Kind::Attendee => &["CN", "ROLE", "PARTSTAT"],
+            Kind::Date => &["TZID", "VALUE"],
+            _ => &[],
+        }
+    }
+
     /// This field's iCalendar content line(s) built from a TOML table
     /// (the edited document, or a single `[[alarm]]` table), without an
     /// end of line, skipping empty values. Empty when the field is absent
     /// or blank, so [`crate::edit::tree::Component::set_all`] removes it.
-    pub(crate) fn content_lines(&self, source: &dyn TableLike) -> Vec<String> {
+    ///
+    /// `originals` are the component's own lines for this property, in the
+    /// order the projection showed them. Each line is patched rather than
+    /// rebuilt, so the parameters the document does not write are the ones
+    /// the component already carried.
+    pub(crate) fn content_lines(
+        &self,
+        source: &dyn TableLike,
+        originals: &[String],
+    ) -> Vec<String> {
         let Some(item) = source.get(self.key) else {
             return Vec::new();
         };
@@ -773,5 +795,12 @@ impl Field {
         }
 
         lines
+            .iter()
+            .enumerate()
+            .map(|(at, line)| {
+                let original = originals.get(at).map(String::as_str);
+                patch::rewritten(original, line, self.params())
+            })
+            .collect()
     }
 }

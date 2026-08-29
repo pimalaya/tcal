@@ -65,6 +65,7 @@ src/
   template/
     model.rs             Kind, Field, Spec, the static field tables, TOP_LEVEL
     line.rs              Line + tab-aligned comment emission
+    patch.rs             patch a content line, keeping the parameters not shown
     util.rs              TOML / escape / calcard-value helpers
     datetime.rs          friendly date-times <-> iCalendar digits, offsets
     duration.rs          DURATION / TRIGGER <-> dotted duration.* keys
@@ -88,5 +89,5 @@ These are deliberate (or pending), and explain the `.lossy` markers:
 
 - **RRULE canonicalisation**: calcard reorders `RRULE` tokens on read (`FREQ, UNTIL, COUNT, INTERVAL, BYDAY, BYMONTHDAY, BYMONTH, BYSETPOS, WKST`), so a rule in another order round-trips canonicalised, not byte-exact.
 - **All-day `VALUE=DATE`**: an all-day date written without the parameter (`DTSTART:20220101`) is re-emitted RFC-correct (`DTSTART;VALUE=DATE:20220101`).
-- **Attendee parameters**: only `CN`/`ROLE`/`PARTSTAT` are modeled; others (`RSVP`, `CUTYPE`, ...) are dropped when an attendee line is rewritten.
-- **List parameters**: `CATEGORIES` / `FREEBUSY` parameters (such as `FBTYPE`) are not modeled.
+- **Attendee parameters**: only `CN`/`ROLE`/`PARTSTAT` are modeled, so only those can be edited; the others (`RSVP`, `CUTYPE`, ...) are kept on the line as they were.
+- **List parameters**: `CATEGORIES` / `FREEBUSY` parameters (such as `FBTYPE`) are not modeled, so they cannot be edited, only kept.

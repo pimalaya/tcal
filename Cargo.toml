@@ -52,5 +52,8 @@ thiserror = { version = "2", default-features = false }
 toml_edit = "0.25"
 uuid = { version = "1", features = ["v4"], optional = true }
 
+[dev-dependencies]
+proptest = "1"
+
 [patch.crates-io]
 ical-rs.git = "https://github.com/pimalaya/ical"

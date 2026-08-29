@@ -38,7 +38,9 @@ TOML forbids duplicate keys, so an undecided document does not parse and cannot 
 
 The ancestor is a comment because keeping it is never the resolution to a collision: both sides moved away from it, and offering it as a live third line invites discarding two edits at once.
 
-A field the projection writes as several lines (a date and its zone, a duration, a recurrence) is contested whole, since its lines are one value and half of each side would be neither.
+A field the projection writes as several lines (a date and its zone, a duration, a recurrence) SHALL contest every line its two sides spell differently, and SHALL write the lines they agree on once. Contesting the differing lines together is what keeps the value whole: half of one side and half of the other would be neither, and leaving one of them undeleted keeps the document unappliable, which is the forcing doing its work. A line both sides agree on is not a choice, since either copy is the other, and duplicating it would ask for a decision that decides nothing while burying the one that does not.
+
+The refusal SHALL name the key as the document writes it, dotted path included, since a name the reader cannot find in the document is a riddle rather than help.
 
 #### Scenario: An undecided document is refused
 - GIVEN a merged document holding a collision as written
@@ -50,12 +52,22 @@ A field the projection writes as several lines (a date and its zone, a duration,
 - WHEN it is applied
 - THEN the calendar carries the surviving value
 
+#### Scenario: The refusal names a key the document writes
+- GIVEN a merged document contesting one part of a value the projection writes as several lines
+- WHEN it is applied
+- THEN the refusal names that part under the dotted key the document writes it as
+
+#### Scenario: A multi-line value is contested whole
+- GIVEN two sides moving a start to a different time in a different zone
+- WHEN the document is projected
+- THEN both the date and its zone are written once per side, and deleting only one line of a side still refuses
+
 ### Requirement: Only a genuine choice is rendered as one
 A report entry the merge already settled SHALL be a header comment, not duplicate keys. Three settle themselves: a removal against an update, where the update wins whichever side it came from; a rule change against an instance change, where both survive and the reader is being warned that the rule may have moved the ground the instance stood on; and a change refused because the edited side does not speak for the organiser, which is not the reader's to reverse.
 
 Rendering any of them as a choice would ask a reader to decide something already decided, and in two of the three cases one of the candidates could not be written as a line at all.
 
-A collision on something the projection does not model is likewise a comment, naming what changed and saying that the local value was kept: there is no key to write it twice under, and inventing one would put a property in the document that applying it could not carry back.
+A collision on something the projection does not model is likewise a comment, naming what changed and saying that the local value was kept: there is no key to write it twice under, and inventing one would put a property in the document that applying it could not carry back. A collision the projection spells the same way on both sides is the same case: the difference sits in something it never shows, so there is nothing to put to a reader.
 
 #### Scenario: A warned pair is not a choice
 - GIVEN a merge where one side changed the recurrence rule and the other moved an overriding instance
@@ -72,6 +84,11 @@ A collision on something the projection does not model is likewise a comment, na
 - WHEN the document is projected
 - THEN the local value is in the merged bytes and the comment says so
 
+#### Scenario: A collision the projection cannot tell apart is a comment
+- GIVEN two sides setting a different unshown parameter on the same attendee
+- WHEN the document is projected
+- THEN the attendee is written once and the collision is said in a comment
+
 ### Requirement: A nested collision stays inside its table
 A collision inside a nested component SHALL be rendered as duplicate keys within the single table that projects it, and SHALL NOT be rendered as a repeated array-of-tables block. Repeating such a header is valid TOML and would produce a second alarm or attendee rather than a parse error, so the forcing that makes the whole convention safe would silently vanish exactly where the structure is deepest.
 
@@ -83,3 +100,20 @@ An attendee is the one property the projection writes as a table rather than a k
 - GIVEN two sides setting a different trigger on the same alarm
 - WHEN the document is projected
 - THEN one alarm table is written, its trigger contested and its other keys written once
+
+### Requirement: Deciding a collision keeps what the document never showed
+Folding an edited document back SHALL keep every parameter of a modelled property that the projection does not show, in the place it held on the line. A parameter the projection does show SHALL be the document's: taken from the edited value, and dropped where the document cleared it.
+
+The projection is an editing affordance rather than an interchange format, so what it does not show it does not own. A line is patched rather than rebuilt: the value and the shown parameters come from the document, the rest of the line is the calendar's own. Rebuilding dropped `RSVP`, which decides whether a scheduling client asks an attendee at all, and `SENT-BY`, which is who may speak for the organiser, so settling a conflict by hand quietly undid what the merge refuses changes to protect.
+
+A property's lines are paired with the document's by position, which is how the projection shows them in the first place.
+
+#### Scenario: An unshown parameter survives a decision
+- GIVEN a merged document whose attendee carries a parameter the form has no key for
+- WHEN the document is applied
+- THEN the attendee line still carries it
+
+#### Scenario: A shown parameter is the document's to clear
+- GIVEN a merged document with an attendee's status emptied
+- WHEN the document is applied
+- THEN the status parameter is gone and the rest of the line is unchanged

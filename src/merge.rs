@@ -14,6 +14,14 @@
 //! cannot be applied, and deciding it is deleting the lines that are not
 //! wanted. [`Merged::apply`] catches that refusal and names the property left
 //! undecided rather than reporting a syntax error.
+//!
+//! A value written as several lines contests the lines its two sides spell
+//! differently and writes the rest once, so the reader is asked about what is
+//! in dispute and nothing else.
+//!
+//! Where the two sides spell every line the same, the difference is in
+//! something the projection never shows, and the collision becomes a comment
+//! like any other it cannot address.
 
 use alloc::{
     borrow::{Cow, ToOwned},
@@ -213,26 +221,34 @@ impl Sides {
         // NOTE: An attendee projects as a table rather than a key, and
         // repeating its header would make a second attendee instead of a
         // duplicate key, so the contest goes inside the one table it wrote.
-        if matches!(field.kind, Kind::Attendee) {
+        let choice = if matches!(field.kind, Kind::Attendee) {
             let mut address = found.address;
             address.push((field.key, at.index));
 
-            return Some(Choice {
+            Choice {
                 at: address,
                 key: None,
                 base: attendee_lines(&self.base, at, field),
                 local: attendee_lines(&self.local, at, field),
                 remote: attendee_lines(&self.remote, at, field),
-            });
+            }
+        } else {
+            Choice {
+                at: found.address,
+                key: Some(field.key),
+                base: field_lines(&self.base, at, field),
+                local: field_lines(&self.local, at, field),
+                remote: field_lines(&self.remote, at, field),
+            }
+        };
+
+        // Two sides the projection spells the same way differ in something it
+        // never shows, so there is nothing to put to a reader.
+        if choice.contested().is_empty() {
+            return None;
         }
 
-        Some(Choice {
-            at: found.address,
-            key: Some(field.key),
-            base: field_lines(&self.base, at, field),
-            local: field_lines(&self.local, at, field),
-            remote: field_lines(&self.remote, at, field),
-        })
+        Some(choice)
     }
 
     /// How a comment names what an action landed on: the block the projection
@@ -314,29 +330,79 @@ impl Choice {
         }
     }
 
-    /// Write the contest: the ancestor as a comment, then one live line per
-    /// side, each naming the side it came from.
-    fn render(&self, out: &mut String) {
-        let single = self.local.len() < 2 && self.remote.len() < 2;
+    /// Every key the two sides write between them, in the order the local
+    /// side writes them, a key only the remote side has last.
+    fn keys(&self) -> Vec<&str> {
+        let mut keys: Vec<&str> = Vec::new();
 
-        out.push_str(if single {
+        for line in self.local.iter().chain(&self.remote) {
+            let key = key_of(line);
+
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+
+        keys
+    }
+
+    /// The keys the two sides spell differently, which are the ones only a
+    /// reader can settle.
+    fn contested(&self) -> Vec<&str> {
+        self.keys()
+            .into_iter()
+            .filter(|key| line_for(&self.local, key) != line_for(&self.remote, key))
+            .collect()
+    }
+
+    /// Write the contest: for a key the sides differ on, the ancestor as a
+    /// comment then one live line per side, each naming the side it came
+    /// from; for a key they agree on, that line once, since either copy is
+    /// the other.
+    fn render(&self, out: &mut String) {
+        let contested = self.contested();
+
+        out.push_str(if contested.len() < 2 {
             "# conflict, keep one line\n"
         } else {
             "# conflict, keep one side\n"
         });
 
-        for line in &self.base {
-            out.push_str(&format!("# {line} # base\n"));
-        }
+        for key in self.keys() {
+            if !contested.contains(&key) {
+                if let Some(line) = line_for(&self.local, key) {
+                    out.push_str(&format!("{line}\n"));
+                }
 
-        for line in &self.local {
-            out.push_str(&format!("{line} # local\n"));
-        }
+                continue;
+            }
 
-        for line in &self.remote {
-            out.push_str(&format!("{line} # remote\n"));
+            if let Some(line) = line_for(&self.base, key) {
+                out.push_str(&format!("# {line} # base\n"));
+            }
+
+            if let Some(line) = line_for(&self.local, key) {
+                out.push_str(&format!("{line} # local\n"));
+            }
+
+            if let Some(line) = line_for(&self.remote, key) {
+                out.push_str(&format!("{line} # remote\n"));
+            }
         }
     }
+}
+
+/// The key a projected line writes, which is its text up to the `=`.
+fn key_of(line: &str) -> &str {
+    line.split_once('=').map_or(line, |(key, _)| key).trim()
+}
+
+/// The line one side writes for a key, absent where that side writes none.
+fn line_for<'l>(lines: &'l [String], key: &str) -> Option<&'l str> {
+    lines
+        .iter()
+        .find(|line| key_of(line) == key)
+        .map(String::as_str)
 }
 
 /// One component found in one calendar: the component itself, the spec that
@@ -666,14 +732,20 @@ fn prop_of<'p, 'a>(action: &'p IcalMergeAction<'a>) -> Option<&'p IcalPropPath<'
 
 /// The key a TOML error names as duplicated, which in a merged document is a
 /// property left undecided rather than a syntax error.
+///
+/// The span of a dotted key covers its last segment alone, so the key is read
+/// from the line it sits on: a reader told about `min` would find no such key
+/// where the document writes `trigger.min`.
 fn undecided(edited: &str, err: &TomlError) -> Option<String> {
     if !err.message().starts_with("duplicate key") {
         return None;
     }
 
-    let key = edited.get(err.span()?)?.trim().trim_matches('"');
+    let span = err.span()?;
+    let start = edited.get(..span.start)?.rfind('\n').map_or(0, |at| at + 1);
+    let line = edited.get(start..)?.lines().next()?;
 
-    Some(key.to_owned())
+    Some(key_of(line).trim_matches('"').to_owned())
 }
 
 #[cfg(test)]
@@ -818,8 +890,8 @@ mod tests {
         assert!(merged.toml.contains("trigger.min = 30 # local"));
         assert!(merged.toml.contains("trigger.min = 45 # remote"));
 
-        // The whole trigger is one value, so the side that is not wanted goes
-        // out whole rather than key by key.
+        // The two sides spell one part of the trigger differently, so that
+        // part is the contest and the side not wanted goes out with it.
         let decided: String = merged
             .toml
             .lines()

@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 753c84bdb84af2b2b5e4e45eab8a9f8c3e83ce630c8c40c8d813f3248d0cc786 # shrinks to (spec, local, remote) = (Contested { from: "ACTION:AUDIO", to: "ACTION:{}", key: "action", header: Some("[[event.alarm]]") }, "LAAAA", "RAAAA")

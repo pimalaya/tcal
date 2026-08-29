@@ -13,6 +13,7 @@ mod datetime;
 mod duration;
 pub(crate) mod line;
 pub(crate) mod model;
+mod patch;
 mod recurrence;
 pub(crate) mod util;
 
@@ -222,9 +223,18 @@ fn reconcile<C: Container>(container: &mut C, doc: &DocumentMut, blocky: bool, f
 
 /// Rewrite one component's fields and child components from its TOML
 /// table, with a minimal diff.
+///
+/// Each field is folded onto the lines the component already holds for it,
+/// so a parameter the document does not show survives.
 fn apply_component(component: &mut Component, table: &dyn TableLike, spec: &Spec) {
     for field in spec.fields {
-        component.set_all(field.name, &field.content_lines(table));
+        let originals: Vec<String> = component
+            .get_all(field.name)
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect();
+
+        component.set_all(field.name, &field.content_lines(table, &originals));
     }
 
     for child in spec.children {
@@ -458,7 +468,7 @@ fn attendee_section(entries: &[&ICalendarEntry], header: &str) -> Vec<Line> {
 fn block_has_content(table: &dyn TableLike, spec: &Spec) -> bool {
     spec.fields
         .iter()
-        .any(|field| !field.content_lines(table).is_empty())
+        .any(|field| !field.content_lines(table, &[]).is_empty())
         || spec.children.iter().any(|child| {
             table
                 .get(child.key)
@@ -943,7 +953,8 @@ mod tests {
     fn trigger_raw_fallback_for_date_time() {
         // An absolute date-time trigger is not a plain duration, so it
         // falls back to a raw key and is kept (not silently dropped) on
-        // apply, carrying the value the reader parsed.
+        // apply, carrying the value the reader parsed and the parameter
+        // that types it, which the form never showed.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             BEGIN:VALARM\r\nACTION:DISPLAY\r\n\
             TRIGGER;VALUE=DATE-TIME:20260101T120000Z\r\n\
@@ -952,7 +963,7 @@ mod tests {
 
         assert!(toml.contains("trigger.raw = "));
         let out = super::apply(src, &toml).unwrap();
-        assert!(out.contains("TRIGGER:2026-01-01T12:00:00Z"));
+        assert!(out.contains("TRIGGER;VALUE=DATE-TIME:2026-01-01T12:00:00Z"));
     }
 
     #[test]
@@ -999,6 +1010,24 @@ mod tests {
             [[event.attendee]]\ndisplay-name = \"Jane Doe\"\nvalue = \"jane@example.com\"\n";
         let out = super::apply(SAMPLE, edited).unwrap();
         assert!(out.contains("CN=Jane Doe"));
+    }
+
+    #[test]
+    fn apply_keeps_the_parameters_the_form_does_not_show() {
+        let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n\
+            SUMMARY;LANGUAGE=en:Team sync\r\n\
+            ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED;CUTYPE=INDIVIDUAL:mailto:jane@example.com\r\n\
+            END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+        // Editing a value keeps the language it is written in, and clearing
+        // the one parameter the form shows leaves the others where they are.
+        let edited = "[[event]]\nsummary = \"Team lunch\"\n\n\
+            [[event.attendee]]\nvalue = \"jane@example.com\"\nstatus = \"\"\n";
+
+        let out = super::apply(src, edited).unwrap();
+
+        assert!(out.contains("SUMMARY;LANGUAGE=en:Team lunch"));
+        assert!(out.contains("ATTENDEE;RSVP=TRUE;CUTYPE=INDIVIDUAL:mailto:jane@example.com"));
     }
 
     #[test]
