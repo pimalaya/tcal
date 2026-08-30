@@ -13,25 +13,23 @@ The vocabulary the document is written in is the projection every other verb use
 ### Requirement: Merging is a verb over three files
 `merge` SHALL take a base, a local and a remote calendar as paths, plus the path to write, run the three-way merge in process, and project the result as TOML for editing. It SHALL write the output path only once the edited document parses, and SHALL leave it untouched otherwise.
 
-It SHALL take the calendar address the edited side speaks for as an option, passed through to the merge, and SHALL claim nothing where it is not given.
-
 The capability SHALL be built unconditionally. ical-rs is a plain dependency of every configuration, so gating the merge changes nothing about the crate set and a cargo feature has nothing left to buy.
 
 Taking the three rather than a pre-merged body with markers is what keeps the document a calendar. Line markers are how a line-oriented merge shows an unresolved region, and an iCalendar is not lines: a marker in one would break every parser downstream, including this one. The merge is a pure function over bodies already at hand, so running it here rather than receiving its output costs nothing and invents no format.
 
 The merged calendar SHALL be projected as the merge produced it, rather than written out and read back. Serialising between the reconciliation and the document is a second reading of the same body, and a byte the merge preserved that a second reading changed would reach the reader as the merge's own work.
 
-The local side is the merge's right side: the edited one, whose actions are replayed onto the remote side's bytes and on whose behalf authority is claimed. It SHALL also be the preferred side, so a collision the merge does not settle holds the local value in the merged bytes, which the document then asks about rather than keeps quietly. The two are separate statements: being replayed is what makes the local side judgeable, and being preferred is what stops that judgement costing it every collision. This is what tCard does with local on the left, where a card has no organiser and nothing to judge.
+The local side SHALL be the merge's left side, so the merged bytes are its own and a collision the merge does not settle holds its value, which the document then asks about rather than keeps quietly. tCard and neverest place it the same way, and so does a merge everywhere else: the side being merged into is the side that wins.
 
 #### Scenario: The output is written only when the document is decided
 - GIVEN a merge whose document still holds an undecided collision
 - WHEN the editor exits
 - THEN the output path is not written
 
-#### Scenario: Being judged does not cost the collision
-- GIVEN a local side speaking for an attendee, changing a property both sides changed
+#### Scenario: A collision keeps the local value
+- GIVEN a local side changing a property the remote side also changed
 - WHEN the merge is projected
-- THEN the merged bytes carry the local value, and a change the attendee has no authority over is still refused
+- THEN the merged bytes carry the local value
 
 ### Requirement: A read failure names the side it came from
 Where one of a merge's three calendars does not parse, the refusal SHALL name the side it was given as, beside what the reader made of it.
@@ -75,9 +73,9 @@ The refusal SHALL name the key as the document writes it, dotted path included, 
 - THEN both the date and its zone are written once per side, and deleting only one line of a side still refuses
 
 ### Requirement: Only a genuine choice is rendered as one
-A report entry the merge already settled SHALL be a header comment, not duplicate keys. Three settle themselves: a removal against an update, where the update wins whichever side it came from; a rule change against an instance change, where both survive and the reader is being warned that the rule may have moved the ground the instance stood on; and a change refused because the edited side does not speak for the organiser, which is not the reader's to reverse.
+A report entry the merge already settled SHALL be a header comment, not duplicate keys. Two settle themselves: a removal against an update, where the update wins whichever side it came from; and a rule change against an instance change, where both survive and the reader is being warned that the rule may have moved the ground the instance stood on.
 
-Rendering any of them as a choice would ask a reader to decide something already decided, and in two of the three cases one of the candidates could not be written as a line at all.
+Rendering either of them as a choice would ask a reader to decide something already decided, and in one of the two cases a candidate could not be written as a line at all.
 
 A collision on something the projection does not model is likewise a comment, naming what changed and saying that the local value was kept: there is no key to write it twice under, and inventing one would put a property in the document that applying it could not carry back. A collision the projection spells the same way on both sides is the same case: the difference sits in something it never shows, so there is nothing to put to a reader.
 
@@ -85,11 +83,6 @@ A collision on something the projection does not model is likewise a comment, na
 - GIVEN a merge where one side changed the recurrence rule and the other moved an overriding instance
 - WHEN the document is projected
 - THEN both changes are written once and the pair is said in a comment
-
-#### Scenario: A refusal is reported, not offered
-- GIVEN a merge where the edited side does not speak for the organiser and changed the start
-- WHEN the document is projected
-- THEN the start is the organiser's, and the refusal is said in a comment
 
 #### Scenario: An unprojectable collision keeps the local value
 - GIVEN a merge where both sides changed a part of a property the projection does not model
@@ -141,7 +134,7 @@ An attendee is the one property the projection writes as a table rather than a k
 ### Requirement: Deciding a collision keeps what the document never showed
 Folding an edited document back SHALL keep every parameter of a modelled property that the projection does not show, in the place it held on the line. A parameter the projection does show SHALL be the document's: taken from the edited value, and dropped where the document cleared it.
 
-The projection is an editing affordance rather than an interchange format, so what it does not show it does not own. A line is patched rather than rebuilt: the value and the shown parameters come from the document, the rest of the line is the calendar's own. Rebuilding dropped `RSVP`, which decides whether a scheduling client asks an attendee at all, and `SENT-BY`, which is who may speak for the organiser, so settling a conflict by hand quietly undid what the merge refuses changes to protect.
+The projection is an editing affordance rather than an interchange format, so what it does not show it does not own. A line is patched rather than rebuilt: the value and the shown parameters come from the document, the rest of the line is the calendar's own. Rebuilding dropped `RSVP`, which decides whether a scheduling client asks an attendee at all, and `SENT-BY`, which is who may speak for the organiser, so settling a conflict by hand quietly undid what those parameters carry.
 
 A property's lines are paired with the document's by position, which is how the projection shows them in the first place.
 

@@ -142,7 +142,6 @@ fn merged(spec: &Contested, local: &str, remote: &str, removes: bool) -> Merged 
         base: BASE,
         local: &side(spec, local, removes),
         remote: &side(spec, remote, false),
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -385,7 +384,6 @@ fn a_contested_alarm_stays_one_alarm() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -413,7 +411,6 @@ fn a_contested_attendee_stays_one_attendee() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -459,7 +456,6 @@ fn two_sides_changing_different_keys_of_one_attendee_agree() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -483,7 +479,6 @@ fn a_collision_the_projection_cannot_tell_apart_is_a_comment() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -519,7 +514,6 @@ fn a_multi_line_value_is_contested_whole() {
         base: &base,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -576,7 +570,6 @@ fn a_removal_against_an_update_is_a_comment() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -601,7 +594,6 @@ fn a_rule_against_an_instance_is_a_comment() {
         base: SERIES,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -615,34 +607,6 @@ fn a_rule_against_an_instance_is_a_comment() {
     assert!(merged.apply(&merged.toml).is_ok());
 }
 
-/// A change refused for want of organiser authority is a header comment: the
-/// merge settled it by refusing, so there is nothing to put to the reader.
-/// vCard has no organiser, so this law has no sibling in tcard.
-#[test]
-fn a_refusal_for_want_of_authority_is_a_comment() {
-    let local = BASE.replace("DTSTART:20260105T090000Z", "DTSTART:20260105T100000Z");
-
-    let merged = Merge {
-        base: BASE,
-        local: &local,
-        remote: BASE,
-        speaks_for: Some("ada@example.com"),
-    }
-    .project()
-    .unwrap();
-
-    announces_what_it_holds(&merged);
-
-    assert!(merged.ical.contains("DTSTART:20260105T090000Z"));
-    assert!(!merged.ical.contains("100000Z"));
-    assert!(notes(&merged.toml).contains("organiser"));
-    assert!(!merged.toml.contains("# conflict"));
-    assert!(merged.apply(&merged.toml).is_ok());
-}
-
-/// A collision the projection cannot address keeps the local value, says so
-/// in the header, and leaves the document appliable: there is no key to
-/// write twice, so there is nothing to force.
 #[test]
 fn an_unprojectable_collision_keeps_the_local_value_and_says_so() {
     let base = BASE.replace("SUMMARY:Standup", "SUMMARY:Standup\r\nX-FOO:one");
@@ -653,7 +617,6 @@ fn an_unprojectable_collision_keeps_the_local_value_and_says_so() {
         base: &base,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -680,7 +643,6 @@ fn a_long_note_wraps_under_itself() {
         base: &base,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -711,7 +673,6 @@ fn the_refusal_names_a_key_the_document_writes() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -748,7 +709,6 @@ fn a_list_union_is_said_in_the_header() {
         base: &base,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();
@@ -765,15 +725,16 @@ fn a_list_union_is_said_in_the_header() {
     assert!(!merged.toml.contains("# conflict"), "offered as a choice");
 
     // Nothing is left to choose, so the document applies as it stands, with
-    // the whole list on the one key the reader can edit.
+    // the whole list on the one key the reader can edit. The local items lead,
+    // the merged calendar being built from the local side's bytes.
     assert!(
-        merged.toml.contains(r#"categories = ["e", "f", "c", "d"]"#),
+        merged.toml.contains(r#"categories = ["c", "d", "e", "f"]"#),
         "{}",
         merged.toml,
     );
 
     let out = merged.apply(&merged.toml).unwrap();
-    assert!(out.contains("CATEGORIES:e,f,c,d"), "{out}");
+    assert!(out.contains("CATEGORIES:c,d,e,f"), "{out}");
 }
 
 /// A collision on one attendee survives a removal of a different one: the
@@ -795,7 +756,6 @@ fn a_removal_does_not_swallow_a_neighbours_collision() {
         base: BASE,
         local: &local,
         remote: &remote,
-        speaks_for: None,
     }
     .project()
     .unwrap();

@@ -505,7 +505,7 @@ dependencies = [
 [[package]]
 name = "ical-rs"
 version = "0.2.0"
-source = "git+https://github.com/pimalaya/ical#59c4b8e484f53359d91e2fd69063fd911cdf304f"
+source = "git+https://github.com/pimalaya/ical#7d8482ae09bc5451513b3d0e0ab61bcfa2b76e87"
 dependencies = [
  "memchr",
 ]

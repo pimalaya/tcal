@@ -5,10 +5,9 @@
 //! [`Merge`] runs the ical-rs three-way merge over a base calendar and two
 //! calendars derived from it, then projects the merged result through
 //! [`crate::template`] so that a person can read it. The local side is the
-//! merge's right side, the edited one, whose changes are replayed and on whose
-//! behalf an authority claim is made, and it is also the preferred one, so a
-//! property neither side settled keeps the local value in the merged bytes and
-//! the document then asks.
+//! merge's left side, so the merged bytes are its own and a property neither
+//! side settled keeps its value, which the document then asks about. That is
+//! what tcard and neverest do, and what a merge does everywhere else.
 //!
 //! What the merge settled by itself becomes a comment in the document header.
 //! What it could not settle becomes the same key written once per side, which
@@ -31,7 +30,7 @@
 //! not told cannot review it.
 
 use alloc::{
-    borrow::{Cow, ToOwned},
+    borrow::ToOwned,
     format,
     string::{String, ToString},
     vec,
@@ -41,9 +40,7 @@ use alloc::{
 use ical::tree::{
     cst::IcalCst,
     line::IcalLine,
-    merge::{
-        IcalComponentPath, IcalMerge, IcalMergeAction, IcalMergeReason, IcalMergeSide, IcalPropPath,
-    },
+    merge::{IcalComponentPath, IcalMerge, IcalMergeAction, IcalMergeReason, IcalPropPath},
 };
 use toml_edit::TomlError;
 
@@ -54,7 +51,7 @@ use crate::{
         self, attendee_keys, child_components, entries_for,
         model::{Field, Kind, Spec, TOP_LEVEL},
         top_level,
-        util::{ensure_mailto, strip_mailto, text},
+        util::{strip_mailto, text},
     },
 };
 
@@ -65,14 +62,11 @@ const WRAP: usize = 66;
 pub struct Merge<'a> {
     /// The common ancestor both sides were derived from.
     pub base: &'a str,
-    /// The edited side, whose changes are replayed onto the remote one.
+    /// The edited side. Its bytes are the ones the merged calendar is built
+    /// from, and its value is the one a collision keeps.
     pub local: &'a str,
     /// The other side.
     pub remote: &'a str,
-    /// The calendar address the local side edits as, on which ground a local
-    /// change to a property someone else organises is refused (RFC 5546
-    /// section 3.2). Unset claims nothing and refuses nothing.
-    pub speaks_for: Option<&'a str>,
 }
 
 impl Merge<'_> {
@@ -82,14 +76,14 @@ impl Merge<'_> {
         let local = read(self.local, "local")?;
         let remote = read(self.remote, "remote")?;
 
+        // NOTE: the local side is the left one, so the merged calendar is
+        // built from its bytes and keeps its value where nothing else
+        // settles a collision. That is what tcard and neverest do, and what
+        // a merge does everywhere else: the side being merged into wins.
         let report = IcalMerge {
             base: &base,
-            left: &remote,
-            right: &local,
-            right_speaks_for: self
-                .speaks_for
-                .map(|address| Cow::Owned(ensure_mailto(address))),
-            prefer: IcalMergeSide::Right,
+            left: &local,
+            right: &remote,
         }
         .merge();
 
@@ -115,7 +109,7 @@ impl Merge<'_> {
             }
         }
 
-        sides.note_unions(&mut notes, &report.right, &report.left);
+        sides.note_unions(&mut notes, &report.left, &report.right);
 
         let toml = decorate(&template::project(&sides.merged), &notes, &choices);
 
@@ -164,24 +158,21 @@ impl Sides<'_> {
     /// What one conflict becomes in the document: a choice when both sides
     /// wrote a value and only a reader can pick, a comment when the merge
     /// already decided.
-    fn read(&self, local: &IcalMergeAction<'_>, reason: &IcalMergeReason<'_>) -> Reading {
+    /// The conflict names the right side's action, which is the remote one,
+    /// and the reason carries the left side's, which is the local one.
+    fn read(&self, remote: &IcalMergeAction<'_>, reason: &IcalMergeReason<'_>) -> Reading {
         match reason {
-            IcalMergeReason::Authority => Reading::Note(format!(
-                "{}: changed on local, but it is the organiser's to set, so the change was refused (RFC 5546 3.2).",
-                self.name(local)
-            )),
-
-            IcalMergeReason::Recurrence(remote) => Reading::Note(format!(
+            IcalMergeReason::Recurrence(local) => Reading::Note(format!(
                 "{} changed on local and {} on remote: one is a series and the other one of its instances, and both were kept, so the rule may have moved the ground the instance stood on.",
                 self.name(local),
                 self.name(remote)
             )),
 
-            IcalMergeReason::Divergent(remote) if is_removal(local) || is_removal(remote) => {
+            IcalMergeReason::Divergent(local) if is_removal(local) || is_removal(remote) => {
                 Reading::Note(self.dropped(local, remote))
             }
 
-            IcalMergeReason::Divergent(_) => match self.choice(local) {
+            IcalMergeReason::Divergent(local) => match self.choice(local) {
                 Some(choice) => Reading::Choice(choice),
                 None => Reading::Note(self.kept(local)),
             },
@@ -189,7 +180,7 @@ impl Sides<'_> {
     }
 
     /// The comment for a collision the document cannot put to a reader, which
-    /// the merge settled by preferring the local side.
+    /// the merge settled by keeping the local side's value.
     fn kept(&self, local: &IcalMergeAction<'_>) -> String {
         format!(
             "{}: changed on both sides, and the local value was kept.",
@@ -910,12 +901,11 @@ mod tests {
             base: BASE,
             local: &local,
             remote: &remote,
-            speaks_for: None,
         }
         .project()
         .unwrap();
 
-        // The merged bytes carry the local value, the preferred side, though
+        // The merged bytes carry the local value, the left side, though
         // the document still asks rather than keeping it quietly.
         assert!(merged.ical.contains("SUMMARY:Daily standup"));
 
@@ -951,14 +941,13 @@ mod tests {
             base: &base,
             local: &local,
             remote: &remote,
-            speaks_for: None,
         }
         .project()
         .unwrap();
 
         // The projection does not model X-FOO, so there is no key to write
         // twice under: the document says which value it carries, and the local
-        // side is the preferred one.
+        // side is the left one.
         assert!(merged.ical.contains("X-FOO:two"));
         assert!(!merged.ical.contains("X-FOO:three"));
         assert!(
@@ -978,7 +967,6 @@ mod tests {
             base: BASE,
             local: &local,
             remote: &remote,
-            speaks_for: None,
         }
         .project()
         .unwrap();
@@ -1016,7 +1004,6 @@ mod tests {
             base: SERIES,
             local: &local,
             remote: &remote,
-            speaks_for: None,
         }
         .project()
         .unwrap();
@@ -1031,61 +1018,6 @@ mod tests {
     }
 
     #[test]
-    fn a_refusal_for_want_of_authority_is_a_comment() {
-        let local = edited(BASE, "DTSTART:20260105T090000Z", "DTSTART:20260105T100000Z");
-
-        let merged = Merge {
-            base: BASE,
-            local: &local,
-            remote: BASE,
-            speaks_for: Some("ada@example.com"),
-        }
-        .project()
-        .unwrap();
-
-        // Ada is an attendee, and the start of a meeting is the organiser's to
-        // set, so the change is reported rather than offered.
-        assert!(merged.ical.contains("DTSTART:20260105T090000Z"));
-        assert!(!merged.ical.contains("100000Z"));
-        assert!(merged.toml.contains("organiser"), "no comment");
-        assert!(!merged.toml.contains("# conflict"), "offered as a choice");
-        assert!(merged.apply(&merged.toml).is_ok());
-    }
-
-    #[test]
-    fn being_judged_does_not_cost_the_collision() {
-        let base = edited(BASE, "SUMMARY:Standup", "SUMMARY:Standup\r\nX-FOO:one");
-        let local = edited(&base, "X-FOO:one", "X-FOO:two");
-        let local = edited(
-            &local,
-            "DTSTART:20260105T090000Z",
-            "DTSTART:20260105T100000Z",
-        );
-        let remote = edited(&base, "X-FOO:one", "X-FOO:three");
-
-        let merged = Merge {
-            base: &base,
-            local: &local,
-            remote: &remote,
-            speaks_for: Some("ada@example.com"),
-        }
-        .project()
-        .unwrap();
-
-        // Ada is an attendee, so the start stays the organiser's to set and
-        // her change to it is refused. A property outside the vocabulary is
-        // hers, and preferring the local side is what lets her keep it.
-        assert!(merged.ical.contains("DTSTART:20260105T090000Z"));
-        assert!(!merged.ical.contains("100000Z"));
-        assert!(merged.ical.contains("X-FOO:two"));
-        assert!(merged.toml.contains("organiser"), "no refusal");
-        assert!(
-            merged.toml.contains("and the local value was"),
-            "no comment"
-        );
-    }
-
-    #[test]
     fn a_removal_against_an_update_is_a_comment() {
         let local = BASE.replace("LOCATION", "X-NONE").to_string();
         let local = edited(&local, "SUMMARY:Standup\r\n", "");
@@ -1095,7 +1027,6 @@ mod tests {
             base: BASE,
             local: &local,
             remote: &remote,
-            speaks_for: None,
         }
         .project()
         .unwrap();
@@ -1116,7 +1047,6 @@ mod tests {
             base: BASE,
             local: BASE,
             remote: "not an iCalendar at all",
-            speaks_for: None,
         }
         .project();
 

@@ -87,11 +87,10 @@
 //! field code the projection uses, so a choice and the document around it are
 //! written by one path.
 //!
-//! The local side is the merge's right side, the replayed one, on whose
-//! behalf `--speaks-for` claims authority, and it is also the preferred one.
-//! Being replayed is what makes it judgeable; being preferred is what stops
-//! that judgement costing it every collision, which is the same value tcard
-//! keeps by putting local on the left.
+//! The local side is the merge's left side, so the merged calendar is built
+//! from its bytes and keeps its value where nothing else settles a collision.
+//! tcard and neverest place it the same way, which is also what a merge does
+//! everywhere else: the side being merged into is the one that wins.
 //!
 //! What the merge settled by itself is said in a comment at the head of that
 //! document. What it could not settle is written once per side, each line

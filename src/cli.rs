@@ -198,10 +198,6 @@ pub struct MergeCommand {
     /// Where to write the resolved calendar.
     #[arg(value_name = "OUTPUT", value_parser = path_parser)]
     pub output: PathBuf,
-    /// The calendar address the local side edits as, so a change to a
-    /// meeting someone else organises can be refused (RFC 5546 3.2).
-    #[arg(long, value_name = "ADDRESS")]
-    pub speaks_for: Option<String>,
 }
 
 impl MergeCommand {
@@ -214,7 +210,6 @@ impl MergeCommand {
             base: &base,
             local: &local,
             remote: &remote,
-            speaks_for: self.speaks_for.as_deref(),
         }
         .project()?;
 

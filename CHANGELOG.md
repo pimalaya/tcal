@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The merge no longer states which side wins a collision, ical-rs having hard-coded it.
+
+  The local calendar is the merge's left side, which is git's `ours`, and `ours` wins. tcal used to say so explicitly; there is nothing left to say.
+
+- The local calendar is now the merge's left side, so a collision keeps its value and the merged bytes are its own.
+
+  It used to sit on the right, because authority could only be claimed for the right side, and it then had to ask for the right side to be preferred to keep winning collisions. ical-rs no longer names a side that way, so local moves to the left and wins by default, which is where tcard and neverest already put it and what a merge does everywhere else. One visible consequence: where both sides add to the same list, the local items now lead.
+
+- Removed `merge --speaks-for`, along with the refusal it bought.
+
+  It passed a calendar address to ical-rs so that a change to a property someone else organises could be refused (RFC 5546 section 3.2). That capability is gone from the library, so the flag has nothing to pass and a merge no longer refuses anything on that ground.
+
 - Made the library `no_std` (with `alloc`) and gated the binary behind a `cli` feature.
 
   With no features it is a `no_std` core: parse an iCalendar and project it to TOML and back (`ical`, `template`, `error`). The `cli` feature (the default) adds the binary, the `template` and `edit` commands and the `$EDITOR` integration, pulling in `std`. Library consumers wanting only the projection no longer pay for clap/anyhow/the editor.
