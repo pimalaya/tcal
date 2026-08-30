@@ -19,10 +19,11 @@ use crate::template::{
     util::{table_int, table_text, text, toml_str},
 };
 
-/// Project a duration entry as dotted magnitude keys, the field's hint on
-/// the leading line. The sign is implied by context, so the parts are
-/// unsigned; a value that is not a plain duration (an absolute date-time
-/// trigger) is shown raw as `<prefix>.raw`, round-tripping intact.
+/// Project a duration entry as dotted magnitude keys, the hint on the first.
+///
+/// The sign is implied by context, so the parts are unsigned. A value that
+/// is not a plain duration (an absolute date-time trigger) is shown raw as
+/// `<prefix>.raw`, round-tripping intact.
 pub fn duration_lines(entry: Option<&IcalLine<'_>>, prefix: &str, hint: Option<&str>) -> Vec<Line> {
     let value = entry.map(text).filter(|value| !value.is_empty());
     let parts = value.as_deref().and_then(parse_duration);
@@ -48,10 +49,11 @@ pub fn duration_lines(entry: Option<&IcalLine<'_>>, prefix: &str, hint: Option<&
     ]
 }
 
-/// Assemble an iCalendar duration from a table's `week/day/hour/min/sec`
-/// parts (or a raw `raw` escape hatch), prefixing `-` when `negative`. A
-/// lone week stays `P<n>W`; weeks otherwise fold into days. `None` when no
-/// part is set.
+/// Assemble an iCalendar duration from a table's magnitude parts.
+///
+/// Read from `week/day/hour/min/sec`, or from the `raw` escape hatch, and
+/// prefixed with `-` when `negative`. A lone week stays `P<n>W`, weeks
+/// otherwise folding into days. `None` when no part is set.
 pub fn duration_value(table: &dyn TableLike, negative: bool) -> Option<String> {
     if let Some(raw) = table_text(table, "raw") {
         return Some(raw);
@@ -102,8 +104,10 @@ pub fn duration_value(table: &dyn TableLike, negative: bool) -> Option<String> {
     Some(out)
 }
 
-/// Parse an iCalendar duration (`P1DT2H30M`, `PT15M`, `P2W`, optionally
-/// signed) into unsigned magnitudes; `None` when not a duration.
+/// Parse an iCalendar duration into unsigned magnitudes.
+///
+/// Accepts `P1DT2H30M`, `PT15M`, `P2W`, optionally signed; `None` when the
+/// value is not a duration.
 fn parse_duration(value: &str) -> Option<(i64, i64, i64, i64, i64)> {
     let value = value.trim();
     let value = value.strip_prefix(['+', '-']).unwrap_or(value);
@@ -149,7 +153,8 @@ fn parse_duration(value: &str) -> Option<(i64, i64, i64, i64, i64)> {
     Some((week, day, hour, minute, second))
 }
 
-/// Split a duration segment (`1D`, `2H30M`) into `(number, unit)` pairs;
+/// Split a duration segment (`1D`, `2H30M`) into `(number, unit)` pairs.
+///
 /// `None` when a number has no unit or a unit has no number.
 fn scan_units(segment: &str) -> Option<Vec<(i64, char)>> {
     let mut pairs = Vec::new();

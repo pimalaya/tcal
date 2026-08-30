@@ -83,8 +83,10 @@
 //!
 //! That last step goes by the identity the report carries, an attendee's
 //! calendar address, rather than by a position either side's own removal
-//! moves. Each side's spelling of a contested field is rendered by the same
-//! field code the projection uses, so a choice and the document around it are
+//! moves.
+//!
+//! Each side's spelling of a contested field is rendered by the same field
+//! code the projection uses, so a choice and the document around it are
 //! written by one path.
 //!
 //! The local side is the merge's left side, so the merged calendar is built
@@ -129,9 +131,11 @@
 //!
 //! The runner asserts that projection for every fixture, and a byte-exact
 //! round trip unless a `<name>.lossy` marker says the source is not already
-//! in the form the projection writes back. A real-world export is the most
-//! valuable case, so adding one is the fastest way to turn a bug report into
-//! a regression test; CONTRIBUTING.md carries the steps.
+//! in the form the projection writes back.
+//!
+//! A real-world export is the most valuable case, so adding one is the
+//! fastest way to turn a bug report into a regression test; CONTRIBUTING.md
+//! carries the steps.
 //!
 //! ## Known limitations
 //!

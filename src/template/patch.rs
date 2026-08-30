@@ -53,8 +53,10 @@ pub(crate) fn value_of(line: &str) -> &str {
     line.get(colon(line) + 1..).unwrap_or_default()
 }
 
-/// Where the colon ending a line's name and parameters sits, one inside a
-/// quoted parameter value (`SENT-BY="mailto:s@x"`) not counting.
+/// Where the colon ending a line's name and parameters sits.
+///
+/// A colon inside a quoted parameter value (`SENT-BY="mailto:s@x"`) does
+/// not count.
 fn colon(line: &str) -> usize {
     let mut quoted = false;
 
@@ -96,8 +98,10 @@ fn push(out: &mut String, param: &str) {
     out.push_str(param);
 }
 
-/// Whether two parameters name the same thing, which iCalendar compares
-/// without regard to case (RFC 5545 section 3.2).
+/// Whether two parameters name the same thing.
+///
+/// iCalendar compares parameter names without regard to case (RFC 5545
+/// section 3.2).
 fn named(one: &str, other: &str) -> bool {
     named_after(one, name_of(other))
 }
@@ -128,8 +132,6 @@ mod tests {
     fn an_unshown_parameter_is_kept_where_it_stood() {
         let original = "ATTENDEE;RSVP=TRUE;PARTSTAT=NEEDS-ACTION;CUTYPE=INDIVIDUAL:mailto:a@x";
 
-        // The shown parameter is the document's, in the place it held; the
-        // two around it are the line's own.
         assert_eq!(
             super::rewritten(
                 Some(original),
@@ -139,7 +141,6 @@ mod tests {
             "ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED;CUTYPE=INDIVIDUAL:mailto:a@x",
         );
 
-        // A value the document changed carries the same parameters.
         assert_eq!(
             super::rewritten(Some("SUMMARY;LANGUAGE=en:a"), "SUMMARY:b", &[]),
             "SUMMARY;LANGUAGE=en:b",

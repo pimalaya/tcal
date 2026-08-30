@@ -1,16 +1,22 @@
-//! Golden fixture tests over real-world and crafted calendars.
+//! # Golden fixtures
 //!
-//! Each `tests/data/<name>.<mode>.toml` is the expected projection of
-//! `tests/data/<name>.ics` for `<mode>` (`all` for the whole calendar, or
-//! `_`-joined component-type keys like `event` or `event_todo`). One `.ics`
-//! can have several expectations. To add a case (e.g. from a bug report),
-//! drop the `.ics` in and generate the `.toml` with `tcal template`.
+//! Golden tests of the projection over real-world and crafted calendars,
+//! one case per expectation file under tests/data.
+//!
+//! A case is tests/data/<name>.<mode>.toml, the expected projection of
+//! tests/data/<name>.ics for that mode: `all` for the whole calendar, or
+//! `_`-joined component-type keys like `event` or `event_todo`. One calendar
+//! can carry several expectations, one per mode.
+//!
+//! To add a case, from a bug report or otherwise, drop the calendar in and
+//! generate its expectation with `tcal template`.
 //!
 //! Projection is deterministic, so equality is asserted for every fixture.
-//! Round-trip is checked only for fixtures whose source is already in the
-//! form the projection writes back (no `.lossy` marker file): a real export
-//! often orders an RRULE's tokens its own way, which apply then
-//! canonicalises, so byte-exact round-trip is not expected there.
+//!
+//! Round-trip is asserted only where the source is already in the form the
+//! projection writes back, which the absence of a .lossy marker says: an
+//! export often orders an RRULE's tokens its own way, which apply then
+//! canonicalises.
 
 use std::{fs, path::Path};
 
@@ -54,9 +60,6 @@ fn fixtures_project_and_round_trip() {
             path.display()
         );
 
-        // Untouched, the projection folds back onto the source byte for
-        // byte, unless a `.lossy` marker says the source is not in the form
-        // the projection writes back.
         if !dir.join(format!("{name}.lossy")).exists() {
             let round_trip = tcal::template::apply_with(&ics, &expected, &flags(mode)).unwrap();
             assert_eq!(round_trip, ics, "round-trip mismatch: {}", path.display());

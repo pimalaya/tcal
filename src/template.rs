@@ -2,11 +2,13 @@
 //!
 //! Between a calendar and an ergonomic TOML buffer, in both directions.
 //!
-//! [`project`] renders the calendar as fillable `[[block]]`s; [`project_with`]
-//! narrows to chosen types (one flattens at the root, the [`project_one`]
-//! view). [`apply`] / [`apply_with`] fold an edited buffer back onto the
-//! original text through [`crate::ical`], touching only changed lines and
-//! keeping everything unmodelled or unselected byte for byte.
+//! [`project`] renders the calendar as fillable `[[block]]`s, and
+//! [`project_with`] narrows to chosen types, one of them flattening at the
+//! document root as the [`project_one`] view does.
+//!
+//! [`apply`] and [`apply_with`] fold an edited buffer back onto the original
+//! text through [`crate::ical`], touching only changed lines and keeping
+//! everything unmodelled or unselected byte for byte.
 //!
 //! The modelled vocabulary lives in the model submodule, and the values with
 //! a shape of their own in datetime, duration and recurrence. `UID` and
@@ -41,18 +43,18 @@ use crate::{
     },
 };
 
-/// Project the whole calendar: every modeled type as a `[[block]]`, actual
-/// instances filled and one empty example per absent type.
+/// Project the whole calendar, every modeled type as a `[[block]]`.
+///
+/// Actual instances are filled, and one empty example stands per absent type.
 pub fn project(ical: &Calendar<'_>) -> String {
     project_filtered(ical, TOP_LEVEL)
 }
 
 /// Project a chosen set of component types (by key: `event`, `todo`, ...).
 ///
-/// Nothing selected projects the whole calendar (every type); a single
-/// type flattens it as the document root (bare keys, no wrapper); two or
-/// more keep the `VCALENDAR` root but show only the chosen types. The
-/// unshown types are never lost: [`apply_with`] leaves them untouched.
+/// Nothing selected projects every type, a single type flattens it as the
+/// document root, and two or more keep the `VCALENDAR` root while showing
+/// only those. An unshown type is never lost: [`apply_with`] leaves it be.
 pub fn project_with(ical: &Calendar<'_>, types: &[String]) -> Result<String> {
     let specs = resolve_specs(types)?;
 
@@ -65,8 +67,9 @@ pub fn project_with(ical: &Calendar<'_>, types: &[String]) -> Result<String> {
     })
 }
 
-/// Project the given component specs as `[[block]]`s under the `VCALENDAR`
-/// root: each instance filled, plus one empty example per absent type.
+/// Project the given component specs as `[[block]]`s under the `VCALENDAR`.
+///
+/// Each instance is filled, plus one empty example per absent type.
 fn project_filtered(ical: &Calendar<'_>, specs: &[&Spec]) -> String {
     let mut out = String::new();
 
@@ -98,10 +101,11 @@ fn project_filtered(ical: &Calendar<'_>, specs: &[&Spec]) -> String {
     out
 }
 
-/// Project a single component type flattened as the document root: bare
-/// keys at the top level, sections like `[[attendee]]` / `[[alarm]]`, no
-/// wrapping header. The first component of that type fills it, or an empty
-/// example when there is none.
+/// Project a single component type flattened as the document root.
+///
+/// Bare keys sit at the top level, sections like `[[attendee]]` under them,
+/// and no header wraps them. The first component of that type fills it, or an
+/// empty example where there is none.
 pub fn project_one(ical: &Calendar<'_>, ty: &str) -> Result<String> {
     let spec = TOP_LEVEL
         .iter()
@@ -132,8 +136,9 @@ fn project_one_spec(ical: &Calendar<'_>, spec: &Spec) -> String {
     out
 }
 
-/// Resolve component type keys (`event`, `todo`, ...) to their specs, in
-/// the given order. An unknown key is an error.
+/// Resolve component type keys (`event`, `todo`, ...) to their specs.
+///
+/// They keep the given order, and an unknown key is an error.
 fn resolve_specs(types: &[String]) -> Result<Vec<&'static Spec>> {
     types
         .iter()
@@ -147,34 +152,37 @@ fn resolve_specs(types: &[String]) -> Result<Vec<&'static Spec>> {
         .collect()
 }
 
-/// Apply an edited TOML buffer onto the original iCalendar text, re-rendering
-/// only changed lines and keeping everything unmodeled byte-for-byte. Filled
-/// blocks update or add components; cleared blocks remove them.
+/// Apply an edited TOML buffer onto the original iCalendar text.
+///
+/// Only changed lines are re-rendered, everything unmodeled staying
+/// byte-for-byte. A filled block updates or adds a component, and a cleared
+/// one removes it.
 pub fn apply(original_src: &str, edited_toml: &str) -> Result<String> {
     apply_specs(original_src, edited_toml, &[])
 }
 
-/// Apply an edited buffer for a chosen set of component types: only those
-/// types are reconciled, so types the filtered view never showed are kept
-/// byte-for-byte (editing a `VEVENT` with `--todo` adds a to-do and leaves
-/// the event alone). An empty selection reconciles every type (the default,
-/// where an emptied block removes its component).
+/// Apply an edited buffer for a chosen set of component types.
+///
+/// Only those types are reconciled, so a type the filtered view never showed
+/// is kept byte-for-byte: editing a `VEVENT` with `--todo` adds a to-do and
+/// leaves the event alone. An empty selection reconciles every type.
 pub fn apply_with(original_src: &str, edited_toml: &str, types: &[String]) -> Result<String> {
     let specs = resolve_specs(types)?;
     apply_specs(original_src, edited_toml, &specs)
 }
 
+/// Read the buffer and the original text, then reconcile one against the other.
 fn apply_specs(original_src: &str, edited_toml: &str, filter: &[&Spec]) -> Result<String> {
     let doc: DocumentMut = edited_toml.parse().map_err(TcalError::ParseToml)?;
 
-    // A component-type key means the block form; otherwise it is a flat
+    // NOTE: a component-type key means the block form, otherwise it is a flat
     // single component whose keys sit at the document top level.
     let blocky = TOP_LEVEL.iter().any(|spec| doc.contains_key(spec.key));
 
     let mut cal = crate::ical::parse(original_src)?;
 
-    // Components live inside the VCALENDAR when there is one, else beside it
-    // in the stream (a bare component with no calendar around it).
+    // NOTE: components live inside the VCALENDAR when there is one, else
+    // beside it in the stream, a bare component with no calendar around it.
     match cal.0.first() {
         Some(root) if named(root, "VCALENDAR") => reconcile(&mut cal.0[0], &doc, blocky, filter),
         _ => reconcile(&mut cal, &doc, blocky, filter),
@@ -183,11 +191,11 @@ fn apply_specs(original_src: &str, edited_toml: &str, filter: &[&Spec]) -> Resul
     Ok(cal.to_string())
 }
 
-/// Reconcile `container` against the edited document. In flat mode the
-/// whole document is the selected type's table (or a `VEVENT` by default).
-/// In block mode each selected type's `[[block]]`s reconcile; an empty
-/// selection reconciles every type. Types outside the selection are left
-/// untouched, so a filtered view never drops them.
+/// Reconcile `container` against the edited document.
+///
+/// Flat mode reads the whole document as the selected type's table, a `VEVENT`
+/// by default. Block mode reads each selected type's `[[block]]`s, an empty
+/// selection meaning every type. An unselected type is left untouched.
 fn reconcile<'a, C: Container<'a>>(
     container: &mut C,
     doc: &DocumentMut,
@@ -226,11 +234,10 @@ fn reconcile<'a, C: Container<'a>>(
     }
 }
 
-/// Rewrite one component's fields and child components from its TOML
-/// table, with a minimal diff.
+/// Rewrite one component's fields and children from its TOML table.
 ///
-/// Each field is folded onto the lines the component already holds for it,
-/// so a parameter the document does not show survives.
+/// Each field is folded onto the lines the component already holds for it, so
+/// a parameter the document does not show survives.
 fn apply_component<'a>(component: &mut IcalCst<'a>, table: &dyn TableLike, spec: &Spec) {
     for field in spec.fields {
         let originals = component.lines(field.name);
@@ -253,11 +260,12 @@ fn apply_component<'a>(component: &mut IcalCst<'a>, table: &dyn TableLike, spec:
         }
     }
 }
-/// The display group of an inline field, driving the blank line
-/// separators: the bare scalar keys form one group and the dates another,
-/// while each structured field (every duration or trigger, the recurrence)
-/// is its own group, keyed by field key so two adjacent durations stay
-/// separated.
+
+/// The display group of an inline field, driving the blank line separators.
+///
+/// The bare scalar keys form one group and the dates another, while each
+/// structured field is its own, keyed by field key so that two adjacent
+/// durations stay separated.
 fn field_group(field: &Field) -> (u8, &str) {
     match field.kind {
         Kind::Date => (1, ""),
@@ -267,8 +275,7 @@ fn field_group(field: &Field) -> (u8, &str) {
     }
 }
 
-/// Render one attendee block under `header` (e.g. `event.attendee`),
-/// filled or empty.
+/// Render one attendee block under `header`, filled or empty.
 fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&IcalLine<'_>>) {
     lines.push(Line {
         lhs: format!("[[{header}]]"),
@@ -278,9 +285,11 @@ fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&IcalLine<'
     lines.extend(attendee_keys(entry));
 }
 
-/// The keys of one attendee block, without its `[[header]]` line: what a
-/// merge writes when two sides contest one attendee, since repeating the
-/// header would make a second attendee rather than a duplicate key.
+/// The keys of one attendee block, without its `[[header]]` line.
+///
+/// This is what a merge writes when two sides contest one attendee, since
+/// repeating the header would make a second attendee rather than a duplicate
+/// key.
 pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>) -> Vec<Line> {
     let mut lines = Vec::new();
 
@@ -315,8 +324,9 @@ pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>) -> Vec<Line> {
     lines
 }
 
-/// The top-level components of a calendar (the `VCALENDAR`'s children), or
-/// the lone component of a bare stream.
+/// The top-level components of a calendar, the `VCALENDAR`'s children.
+///
+/// A bare stream has no calendar around it, so its lone component is the one.
 pub(crate) fn top_level<'c, 'a>(ical: &'c Calendar<'a>) -> Vec<&'c IcalCst<'a>> {
     let Some(root) = ical.read() else {
         return Vec::new();
@@ -329,8 +339,9 @@ pub(crate) fn top_level<'c, 'a>(ical: &'c Calendar<'a>) -> Vec<&'c IcalCst<'a>> 
     }
 }
 
-/// The lines of a component writing a field's property (empty when the
-/// component is absent, as an empty block's is).
+/// The lines of a component writing a field's property.
+///
+/// They are empty where the component is absent, as an empty block's is.
 pub(crate) fn entries_for<'c, 'a>(
     component: Option<&'c IcalCst<'a>>,
     field: &Field,
@@ -350,17 +361,19 @@ pub(crate) fn child_components<'c, 'a>(
         .unwrap_or_default()
 }
 
-/// Render a component as a `[[prefix]]` block: its simple fields as one
-/// aligned key block, its attendee fields and child components as nested
-/// `[[prefix.key]]` blocks, recursively.
+/// Render a component as a `[[prefix]]` block.
+///
+/// Its simple fields become one aligned key block, and its attendee fields and
+/// child components nested `[[prefix.key]]` blocks, recursively.
 fn project_component(
     out: &mut String,
     component: Option<&IcalCst<'_>>,
     spec: &Spec,
     prefix: Option<&str>,
 ) {
-    // `None` is the flat top-level event: no `[[block]]` header, and its
-    // sections sit at the top level (`[[attendee]]`, not `[[x.attendee]]`).
+    // NOTE: `None` is the flat top-level event, so it takes no `[[block]]`
+    // header and its sections sit at the top level, `[[attendee]]` rather
+    // than `[[x.attendee]]`.
     if let Some(prefix) = prefix {
         out.push('\n');
         out.push_str("[[");
@@ -392,8 +405,8 @@ fn project_component(
         })
         .collect();
 
-    // One column for the whole component, so every comment aligns at the
-    // same level: across the field groups and the attendee section alike.
+    // NOTE: one column for the whole component, so every comment aligns at
+    // the same level across the field groups and the attendee section alike.
     let column = comment_column(simple.iter().chain(sections.iter().flatten()));
 
     emit_lines(out, &simple, column);
@@ -416,8 +429,9 @@ fn project_component(
     }
 }
 
-/// The TOML header for a section/child `key` under an optional parent
-/// `prefix`: `"key"` at the top level (flat), else `"prefix.key"`.
+/// The TOML header for a section or child `key` under an optional `prefix`.
+///
+/// That is `"key"` at the flat top level, else `"prefix.key"`.
 fn section_header(prefix: Option<&str>, key: &str) -> String {
     match prefix {
         Some(prefix) => format!("{prefix}.{key}"),
@@ -425,8 +439,9 @@ fn section_header(prefix: Option<&str>, key: &str) -> String {
     }
 }
 
-/// Render an attendee field as `[[header]]` blocks, one per entry, or a
-/// single empty example.
+/// Render an attendee field as one `[[header]]` block per entry.
+///
+/// A field no entry wrote gets a single empty example instead.
 fn attendee_section(entries: &[&IcalLine<'_>], header: &str) -> Vec<Line> {
     let mut lines = Vec::new();
 
@@ -441,8 +456,9 @@ fn attendee_section(entries: &[&IcalLine<'_>], header: &str) -> Vec<Line> {
     lines
 }
 
-/// Whether a TOML block carries any modeled value, i.e. is a real
-/// component rather than an empty example placeholder.
+/// Whether a TOML block carries any modeled value.
+///
+/// That is what tells a real component from an empty example placeholder.
 fn block_has_content(table: &dyn TableLike, spec: &Spec) -> bool {
     spec.fields
         .iter()
@@ -489,7 +505,6 @@ mod tests {
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project(&ical);
 
-        // The default root is the VCALENDAR: components are [[blocks]].
         assert!(toml.contains("[[event]]"));
         assert!(toml.contains("summary = \"Team sync\""));
         assert!(toml.contains("date-start = 2026-06-13T14:00:00"));
@@ -500,22 +515,21 @@ mod tests {
         assert!(toml.contains("display-name = \"Jane Doe\""));
         assert!(toml.contains("[[event.alarm]]"));
         assert!(toml.contains("action = \"DISPLAY\""));
-        // The alarm trigger is structured, its sign implied (fires before).
+        // NOTE: the trigger is structured and its sign implied, an alarm
+        // firing before what it belongs to.
         assert!(toml.contains("trigger.min = 15"));
-        // Every other component type still appears as an empty example,
-        // even though the calendar holds only an event.
+
+        // NOTE: an absent type still appears, as an empty example.
         assert!(toml.contains("[[todo]]"));
         assert!(toml.contains("[[journal]]"));
         assert!(toml.contains("[[free-busy]]"));
         assert!(toml.contains("[[timezone]]"));
-        // Unmodeled data never appears in the scaffold.
         assert!(!toml.contains("keep me verbatim"));
         assert!(!toml.contains("DTSTAMP"));
     }
 
     #[test]
     fn blank_project_shows_every_component_type() {
-        // A blank calendar is a starting menu of every modeled component.
         let toml = super::project(&Default::default());
 
         for block in [
@@ -533,7 +547,6 @@ mod tests {
 
     #[test]
     fn project_one_flattens_a_component() {
-        // A single chosen type, flat at the root, no wrapper.
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project_one(&ical, "event").unwrap();
 
@@ -542,13 +555,11 @@ mod tests {
         assert!(toml.contains("[[attendee]]"));
         assert!(toml.contains("[[alarm]]"));
 
-        // An unknown component type is an error.
         assert!(super::project_one(&ical, "nope").is_err());
     }
 
     #[test]
     fn project_one_round_trips_flat() {
-        // A flat buffer (no component key) folds back onto the event.
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project_one(&ical, "event").unwrap();
 
@@ -557,7 +568,6 @@ mod tests {
 
     #[test]
     fn richer_calendar_projects_blocks() {
-        // Several events project as several [[blocks]], children nested.
         let src = "BEGIN:VCALENDAR\r\n\
             BEGIN:VEVENT\r\nSUMMARY:a\r\nEND:VEVENT\r\n\
             BEGIN:VEVENT\r\nSUMMARY:b\r\nEND:VEVENT\r\n\
@@ -573,28 +583,22 @@ mod tests {
     fn blank_project_layout() {
         let toml = super::project(&Default::default());
 
-        // Within the event block: summary leads, start before end,
-        // the description bare key before the nested attendee block.
         assert!(!toml.contains("uid"));
         assert!(toml.find("summary =").unwrap() < toml.find("date-start =").unwrap());
         assert!(toml.find("date-start =").unwrap() < toml.find("date-end =").unwrap());
         assert!(toml.find("description =").unwrap() < toml.find("[[event.attendee]]").unwrap());
 
-        // Empty, uncommented fields; description as a plain empty string.
         assert!(toml.contains("summary = \"\""));
         assert!(toml.contains("description = \"\""));
         assert!(!toml.contains("#summary"));
 
-        // No "required" flag (omitting a field drops it); hints carry no
-        // "e.g." prefix, list enum variants lowercase, and show formats
-        // (dates as a concrete example).
+        // NOTE: no field is flagged required, since omitting one drops it.
         assert!(!toml.contains("# required"));
         assert!(toml.contains("# 2026-06-13T14:30:00"));
         assert!(toml.contains("# display, email, audio"));
         assert!(toml.contains("# confirmed, tentative, cancelled"));
         assert!(!toml.contains("e.g."));
 
-        // Recurrence is inlined as dotted `recurrence.*` keys.
         assert!(toml.contains("recurrence.frequency = \"\""));
         assert!(!toml.contains("[event.recurrence]"));
         assert!(
@@ -606,9 +610,8 @@ mod tests {
     fn hints_are_tab_aligned() {
         let toml = super::project(&Default::default());
 
-        // Every inline hint is separated from its value by a tab, so the
-        // comment lands at a tab stop instead of a far, space-padded
-        // column. No hinted key line carries a run of padding spaces.
+        // NOTE: a tab rather than padding spaces, so the comment lands at a
+        // tab stop instead of a far column the value length decides.
         let hinted: Vec<&str> = toml
             .lines()
             .filter(|line| line.contains('=') && line.contains('#'))
@@ -624,8 +627,8 @@ mod tests {
 
     #[test]
     fn apply_projection_is_a_no_op() {
-        // Projecting then applying an untouched buffer reproduces the
-        // source byte-for-byte: the minimal-diff guarantee at its limit.
+        // NOTE: this is the minimal-diff guarantee at its limit, an untouched
+        // buffer moving not one byte.
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project(&ical);
 
@@ -647,7 +650,6 @@ mod tests {
 
     #[test]
     fn apply_edits_an_existing_alarm() {
-        // Editing the alarm's structured trigger touches only that line.
         let toml = super::project(&ical::parse(SAMPLE).unwrap())
             .replace("trigger.min = 15", "trigger.min = 30");
 
@@ -666,7 +668,6 @@ mod tests {
         assert!(out.contains("SUMMARY:Team sync"));
         assert!(out.contains("DTSTART;TZID=America/New_York:20260613T140000"));
         assert!(out.contains("mailto:jane@example.com"));
-        // Unmodeled property and app-managed bookkeeping survive verbatim.
         assert!(out.contains("X-CUSTOM:keep me verbatim"));
         assert!(out.contains("DTSTAMP:20260101T000000Z"));
         assert!(out.contains("TRIGGER:-PT15M"));
@@ -676,11 +677,11 @@ mod tests {
     fn uid_is_hidden_and_app_managed() {
         let ical = ical::parse(SAMPLE).unwrap();
 
-        // Hidden from the form.
         let toml = super::project(&ical);
         assert!(!toml.contains("uid"));
 
-        // Preserved on round-trip, and not overridable from the buffer.
+        // NOTE: `UID` is app-managed, so a buffer writing one cannot take it
+        // over.
         let edited = "[[event]]\nsummary = \"Team sync\"\nuid = \"hacked\"\n";
         let out = super::apply(SAMPLE, edited).unwrap();
         assert!(out.contains("UID:abc@example"));
@@ -695,14 +696,11 @@ mod tests {
 
         assert!(out.contains("SUMMARY:New title"));
         assert!(!out.contains("Team sync"));
-        // The event is kept, so its unmodeled property stays.
         assert!(out.contains("X-CUSTOM:keep me verbatim"));
     }
 
     #[test]
     fn apply_renders_all_day_and_utc_dates() {
-        // Native TOML values: a bare date is all-day, a `Z` offset is UTC,
-        // and a local date-time with a zone key is a named zone.
         let all_day = super::apply(SAMPLE, "[[event]]\ndate-start = 2026-12-25\n").unwrap();
         assert!(all_day.contains("DTSTART;VALUE=DATE:20261225"));
 
@@ -716,12 +714,12 @@ mod tests {
         .unwrap();
         assert!(zoned.contains("DTSTART;TZID=Europe/Paris:20260613T093000"));
 
-        // A floating local date-time with no zone key stays floating.
         let floating =
             super::apply(SAMPLE, "[[event]]\ndate-start = 2026-06-13T09:30:00\n").unwrap();
         assert!(floating.contains("DTSTART:20260613T093000\r\n"));
 
-        // The older friendly string form is still accepted.
+        // NOTE: the older friendly string form is still accepted, so a buffer
+        // written before the native dates keeps working.
         let legacy =
             super::apply(SAMPLE, "[[event]]\ndate-start = \"2026-06-13 14:00 UTC\"\n").unwrap();
         assert!(legacy.contains("DTSTART:20260613T140000Z"));
@@ -729,7 +727,6 @@ mod tests {
 
     #[test]
     fn apply_adds_an_alarm() {
-        // An event with no alarm gains one from a filled nested block.
         let src = "BEGIN:VCALENDAR\r\n\
             BEGIN:VEVENT\r\n\
             SUMMARY:Solo\r\n\
@@ -748,8 +745,6 @@ mod tests {
 
     #[test]
     fn apply_removes_an_alarm() {
-        // An event block with no nested alarm drops the alarm, while the
-        // event and its unmodeled property stay.
         let out = super::apply(SAMPLE, "[[event]]\nsummary = \"Team sync\"\n").unwrap();
 
         assert!(!out.contains("BEGIN:VALARM"));
@@ -758,8 +753,6 @@ mod tests {
 
     #[test]
     fn apply_empty_buffer_removes_modeled_components() {
-        // No blocks means no modeled components; the VCALENDAR wrapper and
-        // its own properties remain.
         let out = super::apply(SAMPLE, "").unwrap();
 
         assert!(!out.contains("BEGIN:VEVENT"));
@@ -781,10 +774,8 @@ mod tests {
         let ical = ical::parse(src).unwrap();
         let toml = super::project(&ical);
 
-        // Two events project as two blocks.
         assert_eq!(toml.matches("[[event]]").count(), 2);
 
-        // Editing the second leaves the first byte-for-byte.
         let edited = toml.replace("second", "2nd");
         let out = super::apply(src, &edited).unwrap();
         assert_eq!(out, src.replace("SUMMARY:second", "SUMMARY:2nd"));
@@ -805,8 +796,8 @@ mod tests {
 
     #[test]
     fn apply_uppercases_enum_values() {
-        // Enum properties and the attendee role/partstat parameters are
-        // listed lowercase but exported in their canonical uppercase form.
+        // NOTE: an enum is listed lowercase and exported in the canonical
+        // uppercase RFC 5545 writes, while free text is left as written.
         let edited = "[[event]]\nsummary = \"Team sync\"\nstatus = \"confirmed\"\n\n\
             [[event.attendee]]\nvalue = \"jane@example.com\"\n\
             role = \"req-participant\"\nstatus = \"accepted\"\n";
@@ -816,7 +807,6 @@ mod tests {
         assert!(out.contains("STATUS:CONFIRMED"));
         assert!(out.contains("ROLE=REQ-PARTICIPANT"));
         assert!(out.contains("PARTSTAT=ACCEPTED"));
-        // Free-text values are not touched.
         assert!(out.contains("SUMMARY:Team sync"));
     }
 
@@ -838,7 +828,6 @@ mod tests {
 
     #[test]
     fn recurrence_round_trips() {
-        // A canonical rule survives project -> apply byte-for-byte.
         let toml = super::project(&ical::parse(RECUR_SAMPLE).unwrap());
 
         assert_eq!(super::apply(RECUR_SAMPLE, &toml).unwrap(), RECUR_SAMPLE);
@@ -857,7 +846,6 @@ mod tests {
 
     #[test]
     fn recurrence_until_is_native() {
-        // UNTIL projects as a native TOML date-time and reassembles to digits.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             RRULE:FREQ=DAILY;UNTIL=20261231T235900Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let toml = super::project(&ical::parse(src).unwrap());
@@ -868,8 +856,8 @@ mod tests {
 
     #[test]
     fn recurrence_raw_fallback_for_unmodeled_parts() {
-        // A rule with a part tcal does not model (BYHOUR) is shown raw and
-        // round-trips intact rather than being silently dropped.
+        // NOTE: a part tcal does not model is shown raw and round-trips
+        // intact, rather than being silently dropped.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             RRULE:FREQ=DAILY;BYHOUR=9\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         let toml = super::project(&ical::parse(src).unwrap());
@@ -907,8 +895,8 @@ mod tests {
 
     #[test]
     fn duration_assembles_with_implied_sign() {
-        // A bare duration is positive; an alarm trigger is negative, its
-        // sign assumed from context rather than typed.
+        // NOTE: a bare duration is positive and an alarm trigger negative,
+        // the sign coming from the context rather than being typed.
         let src = "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n";
         let edited = "[[event]]\nsummary = \"x\"\nduration.hour = 1\nduration.min = 30\n\n\
             [[event.alarm]]\naction = \"DISPLAY\"\ntrigger.min = 15\n";
@@ -929,10 +917,9 @@ mod tests {
 
     #[test]
     fn trigger_raw_fallback_for_date_time() {
-        // An absolute date-time trigger is not a plain duration, so it
-        // falls back to a raw key and is kept (not silently dropped) on
-        // apply, carrying the value as the calendar wrote it and the
-        // parameter that types it, which the form never showed.
+        // NOTE: an absolute date-time trigger is no plain duration, so it
+        // falls back to a raw key and is kept rather than dropped, carrying
+        // the parameter that types it, which the form never showed.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             BEGIN:VALARM\r\nACTION:DISPLAY\r\n\
             TRIGGER;VALUE=DATE-TIME:20260101T120000Z\r\n\
@@ -946,9 +933,8 @@ mod tests {
 
     #[test]
     fn timezone_offsets_round_trip() {
-        // A UTC offset must project as the ±HHMM the calendar wrote and
-        // survive apply, not get dropped (regression: real VTIMEZONE
-        // exports were losing their offsets).
+        // NOTE: regression, real VTIMEZONE exports were losing their offsets,
+        // so the ±HHMM the calendar wrote must survive apply.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/Paris\r\n\
             BEGIN:STANDARD\r\nDTSTART:19701025T030000\r\nTZOFFSETFROM:+0200\r\n\
             TZOFFSETTO:+0100\r\nTZNAME:CET\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nEND:VCALENDAR\r\n";
@@ -961,8 +947,8 @@ mod tests {
 
     #[test]
     fn freebusy_periods_round_trip() {
-        // FREEBUSY periods must project as period strings and survive
-        // apply, not vanish (regression, twin of the time-zone offset bug).
+        // NOTE: regression, the twin of the time zone offset bug, periods
+        // were vanishing rather than projecting as period strings.
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VFREEBUSY\r\nUID:fb@x\r\n\
             DTSTART:19980101T000000Z\r\nDTEND:19980101T060000Z\r\n\
             FREEBUSY:19980101T010000Z/19980101T020000Z,19980101T030000Z/PT1H\r\n\
@@ -977,8 +963,6 @@ mod tests {
 
     #[test]
     fn attendee_display_name_leads() {
-        // The display name is the first key of an attendee block, and maps
-        // back to the CN parameter on apply.
         let toml = super::project(&ical::parse(SAMPLE).unwrap());
         let block = toml.split("[[event.attendee]]").nth(1).unwrap();
         assert!(block.find("display-name =").unwrap() < block.find("value =").unwrap());
@@ -996,8 +980,6 @@ mod tests {
             ATTENDEE;RSVP=TRUE;PARTSTAT=ACCEPTED;CUTYPE=INDIVIDUAL:mailto:jane@example.com\r\n\
             END:VEVENT\r\nEND:VCALENDAR\r\n";
 
-        // Editing a value keeps the language it is written in, and clearing
-        // the one parameter the form shows leaves the others where they are.
         let edited = "[[event]]\nsummary = \"Team lunch\"\n\n\
             [[event.attendee]]\nvalue = \"jane@example.com\"\nstatus = \"\"\n";
 
@@ -1009,8 +991,8 @@ mod tests {
 
     #[test]
     fn alarm_separates_trigger_and_duration() {
-        // The two structured durations are their own groups: a blank line
-        // sits between the last trigger part and the first duration part.
+        // NOTE: two structured durations are two groups, so a blank line sits
+        // between the last trigger part and the first duration one.
         let toml = super::project(&Default::default());
         assert!(toml.contains("trigger.sec = \"\"\n\nduration.week = \"\""));
     }
@@ -1026,7 +1008,6 @@ mod tests {
 
     #[test]
     fn project_with_one_flag_flattens() {
-        // A single selected type flattens as the root, like project_one.
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project_with(&ical, &["event".to_owned()]).unwrap();
 
@@ -1036,7 +1017,6 @@ mod tests {
 
     #[test]
     fn project_with_many_flags_filters_blocks() {
-        // Two or more keep the VCALENDAR root but show only those types.
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project_with(&ical, &["event".to_owned(), "todo".to_owned()]).unwrap();
 
@@ -1048,8 +1028,6 @@ mod tests {
 
     #[test]
     fn apply_with_filter_preserves_unselected_block() {
-        // Editing the event source filtered to a filled todo block adds the
-        // to-do and leaves the event (and its unmodeled property) verbatim.
         let edited = "[[todo]]\nsummary = \"Submit report\"\n";
         let out = super::apply_with(SAMPLE, edited, &["todo".to_owned()]).unwrap();
 
@@ -1061,8 +1039,8 @@ mod tests {
 
     #[test]
     fn apply_with_filter_does_not_remove_unselected() {
-        // An empty todo block under a todo filter must NOT drop the event:
-        // only selected types are reconciled.
+        // NOTE: only the selected types are reconciled, so an empty todo
+        // block must not take the event down with it.
         let out =
             super::apply_with(SAMPLE, "[[todo]]\nsummary = \"\"\n", &["todo".to_owned()]).unwrap();
 
@@ -1073,8 +1051,6 @@ mod tests {
 
     #[test]
     fn apply_with_flat_one_type_merges() {
-        // --todo on an event source: a flat todo buffer adds a VTODO and
-        // keeps the VEVENT (the headline merge behaviour).
         let ical = ical::parse(SAMPLE).unwrap();
         let toml = super::project_with(&ical, &["todo".to_owned()]).unwrap();
         let filled = toml.replace("summary = \"\"", "summary = \"My task\"");
@@ -1088,17 +1064,11 @@ mod tests {
 
     #[test]
     fn fields_are_grouped() {
-        // The fields cluster by shape: the bare scalar keys (summary and
-        // description leading), then the dates, the duration, and the
-        // recurrence, each its own group, with the attendee section last.
         let toml = super::project(&Default::default());
         let at = |needle: &str| toml.find(needle).unwrap();
 
-        // Headline scalars lead the scalar group.
         assert!(at("summary =") < at("description ="));
         assert!(at("description =") < at("categories ="));
-        // All scalars precede the dates, the dates the duration, the
-        // duration the recurrence, the recurrence the attendee section.
         assert!(at("transparency =") < at("date-start ="));
         assert!(at("date-start =") < at("date-end ="));
         assert!(at("date-end =") < at("duration.week ="));

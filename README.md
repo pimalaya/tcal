@@ -1,6 +1,6 @@
-# tCal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
+# tCal [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
 
-CLI to edit [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML
+CLI to edit iCalendars as ergonomic TOML
 
 ```sh
 $ tcal edit --event
@@ -52,68 +52,75 @@ END:VEVENT
 END:VCALENDAR
 ```
 
-This repository ships two interfaces:
-
-- Rust **library** to generate iCalendar from/to TOML projection
-- **CLI** to print and/or edit TOML template using `$EDITOR`
+This repository ships two interfaces: a Rust library projecting an iCalendar to TOML and back, and a CLI editing that projection in `$EDITOR`.
 
 ## Table of contents
 
 - [Features](#features)
+- [RFC coverage](#rfc-coverage)
 - [Installation](#installation)
   - [Pre-built binary](#pre-built-binary)
   - [Cargo](#cargo)
   - [Nix](#nix)
   - [Sources](#sources)
 - [Usage](#usage)
-  - [Library](#library)
-  - [CLI](#cli)
-- [FAQ](#faq)
-- [License](#license)
 - [AI policy](https://github.com/pimalaya/.github/blob/master/AI_POLICY.md)
-- [Contributing](./CONTRIBUTING.md)
+- [License](#license)
 - [Social](#social)
+- [Contributing](./CONTRIBUTING.md)
 - [Sponsoring](#sponsoring)
 
 ## Features
 
-- Partial `no_std` support
-- iCalendar from/to TOML **projection**, backed by [ical-rs](https://crates.io/crates/ical-rs) (RFC 5545).
-- **Friendly** keys and values: cryptic names become readable TOML keys.
-- **Structured** recurrence and duration.
-- **Discoverable** properties: prints all available properties with empty values by default, fill the ones you need.
-- **Minimal, lossless diffs**: `apply` patches the original text through a byte-faithful syntax tree, re-rendering only the lines you changed.
+- **Projection** of a calendar into ergonomic TOML and back, backed by [ical-rs](https://github.com/pimalaya/ical).
+- **Friendly** keys and values: cryptic property names become readable TOML keys, and a closed vocabulary lists what it accepts.
+- **Structured** recurrence and duration: a rule or a length expands into named parts, with a raw escape hatch for the rest.
+- **Discoverable** properties: every editable property is printed with an empty value, so the form is its own documentation.
+- **Every component type**: events, to-dos, journals, free/busy reports and time zones, narrowed to the ones you ask for.
+- **Minimal, lossless diffs**: only the lines you changed are re-rendered, and what tcal does not model is carried through verbatim.
 - **Three-way merge**: what two sides both changed comes back as duplicate TOML keys, which do not parse until you decide them.
+- **Slim library core**: the projection and the merge build without the standard library, the CLI living behind the opt-in `cli` feature.
+
+## RFC coverage
+
+| RFC    | What is covered                                                                                                                |
+|--------|--------------------------------------------------------------------------------------------------------------------------------|
+| [5545] | iCalendar: events, to-dos, journals, free/busy reports, time zones and alarms, their recurrence rules, durations and attendees |
+
+[5545]: https://www.rfc-editor.org/rfc/rfc5545
 
 ## Installation
 
 ### Pre-built binary
 
-tcal is not yet released, therefore the only way to get a pre-built binary is to check out the [releases](https://github.com/pimalaya/tcal/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section.
+tcal has no tagged release yet, so a binary comes from the [releases](https://github.com/pimalaya/tcal/actions/workflows/releases.yml) workflow: pick the latest run and grab the artifact matching your OS. These are built from `master`.
+
+Once a release is tagged, the install script takes the binary from the [releases](https://github.com/pimalaya/tcal/releases) section instead.
+
+As root:
+
+```sh
+curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | sudo sh
+```
+
+As a regular user:
+
+```sh
+curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | PREFIX=~/.local sh
+```
 
 > [!NOTE]
-> Such binaries are built with the default cargo features. If you need specific features, please use another installation method.
+> Pre-built binaries carry the `cli` feature and nothing else. If you need a different feature set, use another installation method.
 
 ### Cargo
 
-```sh
-cargo install tcal --locked --features cli
-```
-
-You can also use the git repository for a more up-to-date (but less stable) version:
+The binary lives behind the `cli` feature, which is off by default so that a library consumer pays for none of it:
 
 ```sh
-cargo install --locked --git https://github.com/pimalaya/tcal.git
+cargo install --locked --features cli --git https://github.com/pimalaya/tcal.git
 ```
 
-To use `tcal` as a library, add it to your `Cargo.toml`:
-
-```toml
-[dependencies]
-tcal = "0.0.1"
-```
-
-The library has no default features: it is a slim `no_std` (plus `alloc`) build with no clap and no editor integration, just the `project` / `apply` projection and the three-way merge over it. The CLI lives behind the opt-in `cli` feature (enabled above with `cargo install --features cli`).
+tcal is not on [crates.io](https://crates.io) yet, so the git repository is the only source, for the binary and for a `tcal` dependency alike.
 
 ### Nix
 
@@ -139,66 +146,27 @@ nix run
 
 ## Usage
 
-### Library
+Run `tcal --help` for the command tree, and `tcal <command> --help` for a command's arguments. The library API is documented inline, rendered by `cargo doc --open`.
 
-Project a calendar event to TOML, then fold edits back:
-
-```rust
-use tcal::{ical, template};
-
-let input = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-let calendar = ical::parse(input).unwrap();
-
-// Project the whole calendar to a TOML scaffold ([[block]] per component).
-// (project_with(&calendar, &["event".to_owned()]) narrows to chosen types.)
-let scaffold = template::project(&calendar);
-assert!(scaffold.contains("summary = \"Lunch\""));
-
-// After the user edits the scaffold, fold it back onto the original text:
-// only changed lines are re-rendered, everything else stays byte-for-byte.
-let edited = scaffold.replace("Lunch", "Team lunch");
-let updated = template::apply(input, &edited).unwrap();
-assert!(updated.contains("SUMMARY:Team lunch"));
-```
-
-### CLI
-
-Print a blank, fully-documented template:
+A few real command lines:
 
 ```sh
-tcal template
-```
-
-Project an existing event to TOML (path, stdin via `-`, or literal contents):
-
-```sh
-tcal template event.ics
-tcal template - < event.ics
-tcal template --event event.ics              # just the event, flattened
-tcal template --event --todo event.ics       # only events and to-dos
-```
-
-Edit an event in `$EDITOR`. With a file source, the result is written back in place; otherwise it goes to stdout (or `--output`):
-
-```sh
-tcal edit event.ics
-tcal edit - < event.ics > updated.ics
-tcal template | $EDITOR /dev/stdin   # inspect the scaffold first
-```
-
-Start a new event from scratch and write it out:
-
-```sh
-tcal edit --output meeting.ics
-```
-
-Merge two divergent calendars against their common ancestor, decide what the merge could not, and write the result:
-
-```sh
+tcal template                              # a blank, fully documented form
+tcal template event.ics                    # an existing calendar as TOML
+tcal template - < event.ics                # the same, read from stdin
+tcal template --event event.ics            # the event alone, flat at the root
+tcal template --event --todo event.ics     # only events and to-dos, as blocks
+tcal edit event.ics                        # edit in $EDITOR, written back in place
+tcal edit - < event.ics > updated.ics      # edit a stream
+tcal edit --output meeting.ics             # start a new event from scratch
 tcal merge base.ics local.ics remote.ics merged.ics
 ```
 
-A property both sides changed comes back written once per side:
+A type flag narrows the form and nothing else: a type it does not show is left exactly as it was when the result is written back.
+
+The editor is the one [edit](https://crates.io/crates/edit) resolves, `$VISUAL` first, then `$EDITOR`, then an OS default. tcal exposes no override, so set them in your shell rc file.
+
+A property `tcal merge` could not settle comes back written once per side, under the same TOML key:
 
 ```toml
 # conflict, keep one line
@@ -207,43 +175,9 @@ summary = "Daily standup" # local
 summary = "Team standup" # remote
 ```
 
-TOML forbids duplicate keys, so such a document cannot be applied: delete the lines you do not want, or replace them all with a value of your own. The output file is written only once the edited document parses.
+TOML forbids duplicate keys, so an undecided document does not parse and nothing is written. Delete the line you do not want, or replace them all with a value of your own.
 
-## FAQ
-
-### Which calendar components does tcal edit?
-
-All of them, as `[[blocks]]`: `event`, `todo`, `journal`, `free-busy`, `timezone` (with nested `[[event.alarm]]`, `[[timezone.standard]]`/`[[timezone.daylight]]`). Every type is listed (actual instances filled, an empty example for each absent type); repeated components show as repeated blocks. The per-type flags narrow the view: one (`--event`) flattens just that type at the root, several (`--event --todo`) show only those as blocks, and a filtered edit only touches the types it shows (so the rest of the calendar is preserved on save). Component types tcal does not model, and unmodeled properties, are kept verbatim but not surfaced.
-
-### How do I write dates and times?
-
-Dates are native TOML values. Write a bare date (`2026-06-13`) for an all-day event, a local date-time (`2026-06-13T14:00:00`) for a timed one, and a `Z` offset (`2026-06-13T14:00:00Z`) for a UTC value. For a zoned time, keep the local date-time and set the adjacent `date-start-tz` / `date-end-tz` key to an IANA zone like `Europe/Paris`; that key only appears for a named zone (UTC and floating times need none). The older `YYYY-MM-DD HH:MM[ UTC]` string form is still accepted too.
-
-### Why does `tcal merge` show some conflicts as comments rather than as a choice?
-
-Because the merge already decided them, and offering a decided thing as a choice asks you to undo something you cannot see the reasons for. Two settle themselves: a removal against an update, where the update wins whichever side it came from; and a recurrence rule changed on one side while an overriding instance moved on the other, where both survive and you are only being warned that the rule may have moved the ground the instance stood on. A third is a comment for a different reason: where a collision lands on something the document does not show, there is no key to write twice, so the comment says that the local value was kept. A collision the document spells the same way on both sides is that same case, since the difference sits in a parameter it never shows. Everything else, where two values are genuinely in the running, is written as duplicate keys.
-
-### How does `tcal edit` pick the editor?
-
-The [edit](https://crates.io/crates/edit) crate resolves `$VISUAL` first, then `$EDITOR`, then an OS default. tcal does not expose a config override: set `VISUAL` / `EDITOR` in your shell rc file.
-
-### Will tcal reformat my whole calendar on edit?
-
-No. `apply` patches the original text through a byte-faithful syntax tree: only the lines of modeled fields you actually changed are re-rendered, so the diff is minimal. Folding, parameter casing, property order and line endings of every untouched line are kept byte-for-byte.
-
-### What happens to properties and components tcal does not list?
-
-They are kept verbatim. The scaffold surfaces the modeled component vocabulary, but `apply` carries every unmodeled property (`DTSTAMP`, `SEQUENCE`, custom `X-*`) and every unmodeled component type straight from the original calendar into the result. Unmodeled properties inside an edited component are likewise preserved (removing a whole block, of course, removes the component and everything in it).
-
-### How do I debug the CLI?
-
-Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
-
-```sh
-tcal --log trace template event.ics
-```
-
-The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [env_logger](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) documentation). `RUST_BACKTRACE=1` enables full error backtraces. Logs are written to `stderr`.
+What the merge settled on its own is said in a comment at the head of the document instead, since offering a decided thing as a choice asks you to undo what you cannot see the reasons for.
 
 ## License
 

@@ -20,8 +20,9 @@ use crate::template::{
     util::{raw, table_int, table_text, toml_array, toml_int_array, toml_str},
 };
 
-/// The `RRULE` tokens tcal models, in the order they are written back; a
-/// rule using any other token is shown raw to round-trip.
+/// The `RRULE` tokens tcal models, in the order they are written back.
+///
+/// A rule using any other token is shown raw, so that it round-trips.
 const RECUR_KEYS: &[&str] = &[
     "FREQ",
     "UNTIL",
@@ -35,6 +36,7 @@ const RECUR_KEYS: &[&str] = &[
 ];
 
 /// Project a recurrence entry as dotted `<prefix>.*` keys of friendly parts.
+///
 /// A rule using a part tcal does not model is shown as a single raw
 /// `<prefix>.rule` key instead.
 pub fn recur_lines(entry: Option<&IcalLine<'_>>, prefix: &str) -> Vec<Line> {
@@ -108,9 +110,10 @@ pub fn recur_lines(entry: Option<&IcalLine<'_>>, prefix: &str) -> Vec<Line> {
     ]
 }
 
-/// Assemble an `RRULE` value from a recurrence table, in [`RECUR_KEYS`]
-/// order so an untouched rule round-trips byte-for-byte. A non-empty `rule`
-/// key short-circuits to its raw value.
+/// Assemble an `RRULE` value from a recurrence table.
+///
+/// Written in [`RECUR_KEYS`] order, so an untouched rule round-trips
+/// byte-for-byte. A non-empty `rule` key short-circuits to its raw value.
 pub fn recur_rule(table: &dyn TableLike) -> Option<String> {
     if let Some(rule) = table_text(table, "rule") {
         return Some(rule);
@@ -164,8 +167,10 @@ fn parse_rrule(rule: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The `until` right-hand side: a native TOML date-time when the value is
-/// in iCalendar digit form, else a quoted string (empty when absent).
+/// The `until` right-hand side.
+///
+/// A native TOML date-time when the value is in iCalendar digit form, else
+/// a quoted string, empty when absent.
 fn until_line(raw: Option<&str>) -> String {
     match raw.and_then(toml_date) {
         Some(dtm) => dtm.to_string(),
@@ -214,8 +219,9 @@ fn str_list(table: &dyn TableLike, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// An integer list from a recurrence table key, accepting bare numbers or
-/// numeric strings.
+/// An integer list from a recurrence table key.
+///
+/// Bare numbers and numeric strings are both accepted.
 fn int_list(table: &dyn TableLike, key: &str) -> Vec<i64> {
     let Some(array) = table.get(key).and_then(|item| item.as_array()) else {
         return Vec::new();

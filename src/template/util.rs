@@ -6,6 +6,7 @@
 //! A line is read through its logical form rather than through the syntax
 //! tree's own split, because RFC 5545 section 3.1 ends the head at the first
 //! colon outside a quoted parameter value and the tree's split is not quoted.
+//!
 //! The same [`crate::template::patch`] grammar reads a line here and patches
 //! it there, so what the projection shows and what a fold-back writes agree.
 
@@ -29,8 +30,10 @@ pub fn toml_str(value: &str) -> String {
     Value::from(value).to_string().trim().to_string()
 }
 
-/// Render an integer string as a bare TOML number, `""` when blank (which
-/// the caller ignores), or a quoted fallback when not a plain integer.
+/// Render an integer string as a bare TOML number.
+///
+/// `""` when blank, which the caller ignores, and a quoted fallback when
+/// the value is not a plain integer.
 pub fn toml_number(value: &str) -> String {
     if value.is_empty() {
         "\"\"".to_owned()
@@ -80,8 +83,10 @@ pub fn escape(value: &str) -> String {
     out
 }
 
-/// Undo that escaping, the inverse of [`escape`]: what a calendar wrote as
-/// `\,` is a comma, and either spelling of an escaped newline is one.
+/// Undo that escaping, the inverse of [`escape`].
+///
+/// What a calendar wrote as `\,` is a comma, and either spelling of an
+/// escaped newline is one.
 pub fn unescape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut chars = value.chars();
@@ -102,9 +107,10 @@ pub fn unescape(value: &str) -> String {
     out
 }
 
-/// Append `;NAME=value` to `line` when the table entry is non-empty,
-/// quoting on a parameter delimiter. `upper` uppercases closed vocabularies
-/// (`ROLE`, `PARTSTAT`).
+/// Append `;NAME=value` to `line` when the table entry is non-empty.
+///
+/// The value is quoted on a parameter delimiter, and `upper` uppercases the
+/// closed vocabularies (`ROLE`, `PARTSTAT`).
 pub fn push_param(line: &mut String, name: &str, item: Option<&Item>, upper: bool) {
     let Some(value) = item
         .and_then(|item| item.as_str())
@@ -132,8 +138,9 @@ pub fn push_param(line: &mut String, name: &str, item: Option<&Item>, upper: boo
     }
 }
 
-/// The TOML tables addressed by an array-of-tables (`[[key]]`) or an inline
-/// array of inline tables.
+/// The TOML tables addressed by an array-of-tables (`[[key]]`).
+///
+/// An inline array of inline tables is read the same way.
 pub fn tables(item: &Item) -> Vec<&dyn TableLike> {
     if let Some(array) = item.as_array_of_tables() {
         array.iter().map(|table| table as &dyn TableLike).collect()
@@ -148,12 +155,11 @@ pub fn tables(item: &Item) -> Vec<&dyn TableLike> {
     }
 }
 
-/// The value a line carries, still escaped: everything after the colon that
-/// ends its name and parameters, one inside a quoted parameter value not
-/// counting.
+/// The value a line carries, still escaped.
 ///
-/// This is the form a structured value (a recurrence rule) is read in, its
-/// own separators being its syntax rather than the calendar's.
+/// Everything after the colon ending its name and parameters, one inside
+/// a quoted parameter value not counting. A structured value (a recurrence
+/// rule) is read in this form, its separators being its own syntax.
 pub fn raw(line: &IcalLine<'_>) -> String {
     value_of(&logical(line)).to_owned()
 }
@@ -174,8 +180,7 @@ pub fn items(line: &IcalLine<'_>) -> Vec<String> {
     split_items(&raw).into_iter().map(unescape).collect()
 }
 
-/// The first value of a named parameter, the quotes it may be written with
-/// stripped (RFC 5545 section 3.2).
+/// The first value of a named parameter, unquoted (RFC 5545 section 3.2).
 pub fn param(line: &IcalLine<'_>, name: &str) -> Option<String> {
     let logical = logical(line);
 
@@ -190,8 +195,9 @@ pub fn param(line: &IcalLine<'_>, name: &str) -> Option<String> {
         })
 }
 
-/// Split a value on its unescaped commas, an escaped one staying inside the
-/// item it belongs to.
+/// Split a value on its unescaped commas.
+///
+/// An escaped comma stays inside the item it belongs to.
 fn split_items(value: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
@@ -238,8 +244,9 @@ pub fn table_text(table: &dyn TableLike, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// An integer from a TOML table key, accepting a bare number or a numeric
-/// string.
+/// An integer from a TOML table key.
+///
+/// A bare number and a numeric string are both accepted.
 pub fn table_int(table: &dyn TableLike, key: &str) -> Option<i64> {
     let item = table.get(key)?;
     item.as_integer()

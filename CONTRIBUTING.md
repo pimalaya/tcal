@@ -1,55 +1,43 @@
 # Contributing guide
 
-Thank you for investing your time in contributing to tcal.
+Thank you for investing your time in contributing to tCal.
 
 Whether you are a human or an AI agent, read these in order before touching the code:
 
 1. the [Pimalaya README](https://github.com/pimalaya) for what the project is and how its repositories stack;
-2. the [Pimalaya ARCHITECTURE](https://github.com/pimalaya/.github/blob/master/ARCHITECTURE.md) for the conventions every repository shares (layering, `no_std`, modules, errors, code style, licensing, notes for AI agents);
-3. this guide, for how to build, test and submit changes here;
-4. the [src/lib.rs](./src/lib.rs) header for how tcal in particular is designed.
+2. the [Pimalaya CONTRIBUTING](https://github.com/pimalaya/.github/blob/master/CONTRIBUTING.md) guide, which chains to the shared architecture and guidelines;
+3. the inline header documentation in [src/lib.rs](./src/lib.rs): it is the architecture document of this crate;
+4. the [cairn](./cairn) folder for the living specification, the in-flight proposals and the landed history, activated by [AGENTS.md](./AGENTS.md).
 
-This document stays operational; the design lives in the [src/lib.rs](./src/lib.rs) header, which is this crate's architecture document.
+Everything below documents only what differs from the Pimalaya standards.
 
-## Development environment
+## Feature matrix
 
-The environment is managed by [Nix](https://nixos.org/download.html). `nix develop` spawns a shell with the right toolchain; every cargo command below assumes it (or prefix them with `nix develop --command`).
+tcal speaks no protocol, so the layered build of the org guide does not apply here. It has one feature, `cli`, off by default: it carries the binary, clap, the editor and the clock, and it is the only thing pulling in the standard library.
 
-Without Nix, install a recent stable toolchain via [rustup](https://rust-lang.github.io/rustup/) (`rustup update`); the crate needs Rust matching the `rust-version` in [Cargo.toml](./Cargo.toml).
-
-## Build
-
-tcal is a `#![no_std]` library with an optional CLI behind a single `cli` feature (not enabled by default):
+Build both, so that nothing std-only leaks into the `no_std` core:
 
 ```sh
-cargo build                      # no_std core library
-cargo build --features cli       # library + binary (pulls in std)
-cargo build --release --features cli
+cargo build                                # the library alone, no_std over alloc
+cargo build --features cli                 # the library and the binary above it
 ```
 
-When touching feature gates or imports, check both the core and the CLI build, so no `std`-only code leaks into the `no_std` core.
-
-## Lint, test, audit
+The manifest patches ical-rs to its git repository, the projection tracking that syntax tree too closely to sit on a release. Point the patch at a working copy when changing both at once:
 
 ```sh
-cargo test                       # unit + integration + doc tests
-cargo test --features cli        # also exercises the CLI-only code paths
-cargo clippy --all-targets       # keep clean for core and --features cli
-cargo fmt                        # CI checks `cargo fmt --check`
+cargo test --all-features --config 'patch.crates-io.ical-rs.path="../ical"'
 ```
 
-Before opening a PR, make sure `cargo test`, `cargo clippy` and `cargo fmt --check` pass.
+## Adding a fixture
 
-### Adding a fixture
+tests/data is a golden database of calendars, described in the golden fixture database section of the [src/lib.rs](./src/lib.rs) header. A real-world calendar is the fastest way to turn a bug report into a regression test:
 
-`tests/data/` is a golden database of calendars (see the golden fixture database section of the [src/lib.rs](./src/lib.rs) header); adding a real-world calendar is the fastest way to turn a bug report into a regression test:
+1. drop the calendar in as tests/data/NAME.ics;
+2. generate the expectation beside it with the command below, adding the type flags and naming the file after them, `_`-joined, when the case is a narrowed projection;
+3. read the generated TOML: anything wrong in it is a bug in the code, not in the fixture;
+4. add an empty tests/data/NAME.lossy marker when the source will not round trip byte for byte, the known limitations section of the [src/lib.rs](./src/lib.rs) header saying when it will not;
+5. run the tests.
 
-1. drop the calendar in as `tests/data/<name>.ics`;
-2. generate the expectation: `cargo run --features cli -- template [--flags] tests/data/<name>.ics -o tests/data/<name>.<mode>.toml` (where `<mode>` is `all`, or `_`-joined type keys like `event`);
-3. eyeball the generated `.toml`; if anything looks wrong, you have found a bug, fix the code rather than the fixture;
-4. if the source will not round-trip byte-for-byte (see the known limitations in the [src/lib.rs](./src/lib.rs) header), add an empty `tests/data/<name>.lossy` marker;
-5. run `cargo test`.
-
-## Commit style
-
-tcal follows the [conventional commits specification](https://www.conventionalcommits.org/en/v1.0.0/#summary). Keep the subject imperative and scoped; describe the *why* in the body when it is not obvious.
+```sh
+cargo run --features cli -- template tests/data/NAME.ics -o tests/data/NAME.all.toml
+```

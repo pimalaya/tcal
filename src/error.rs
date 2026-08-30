@@ -5,6 +5,7 @@
 use core::result;
 
 use alloc::string::String;
+
 use thiserror::Error;
 
 /// The global `Error` enum of the library.
@@ -13,8 +14,10 @@ pub enum TcalError {
     /// The input does not read as an iCalendar.
     #[error("Cannot parse iCalendar: {0}")]
     ParseICalendar(String),
-    /// One of a merge's three calendars does not read, named by the side it
-    /// was given as.
+    /// One of a merge's three calendars does not read.
+    ///
+    /// It is named by the side it was given as, since the three are otherwise
+    /// indistinguishable to the reader.
     #[error("Cannot read the {side} calendar: {message}")]
     ReadCalendar {
         /// The side the unreadable calendar was given as.
@@ -22,8 +25,10 @@ pub enum TcalError {
         /// What ical-rs made of it.
         message: String,
     },
-    /// A merged document still holds a collision, written as one key per
-    /// side, which TOML refuses as a duplicate key.
+    /// A merged document still holds a collision.
+    ///
+    /// It is written as one key per side, which TOML refuses as a duplicate
+    /// key, so an undecided document cannot be applied.
     #[error("Property {0} is left undecided: keep one of its lines and delete the others")]
     Undecided(String),
     /// The edited TOML buffer is not valid TOML.

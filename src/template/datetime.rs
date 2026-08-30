@@ -17,17 +17,16 @@ use toml_edit::{Date, Datetime, Offset, Time};
 /// Shared hint for the date keys: a concrete example native TOML date-time.
 pub const DATE_HINT: &str = "2026-06-13T14:30:00";
 
-/// Whether a date-time is written as UTC, which iCalendar marks with a
-/// trailing `Z`.
+/// Whether a date-time is UTC, which iCalendar marks with a trailing `Z`.
 pub fn is_utc(dtm: &Datetime) -> bool {
     matches!(dtm.offset, Some(Offset::Z))
 }
 
-/// Build an iCalendar date line from a native TOML date-time and optional
-/// named zone: a bare date becomes a `VALUE=DATE` property, a UTC value
-/// keeps its `Z`, and a named zone becomes a `TZID` parameter. A numeric
-/// offset other than `Z` is treated as floating, as iCalendar has no
-/// offset date-time form.
+/// Build an iCalendar date line from a native TOML date-time and zone.
+///
+/// A bare date becomes a `VALUE=DATE` property, a UTC value keeps its `Z`,
+/// and a named zone becomes a `TZID` parameter. An offset other than `Z` is
+/// treated as floating, iCalendar having no offset date-time form.
 pub fn toml_date_line(name: &str, dtm: &Datetime, tz: Option<&str>) -> String {
     let Some(date) = dtm.date else {
         return format!("{name}:{dtm}");
@@ -53,11 +52,11 @@ pub fn toml_date_line(name: &str, dtm: &Datetime, tz: Option<&str>) -> String {
     }
 }
 
-/// Read an iCalendar date or date-time value (`20261231T235900Z`) as a
-/// native TOML one.
+/// Read an iCalendar date or date-time value as a native TOML one.
 ///
-/// `None` for anything not in that digit form, which the projection then
-/// shows as the string the calendar wrote, so it round-trips whole.
+/// `None` for anything not in the digit form (`20261231T235900Z`), which
+/// the projection then shows as the string the calendar wrote, so it
+/// round-trips whole.
 pub fn toml_date(raw: &str) -> Option<Datetime> {
     let raw = raw.trim();
     let (body, utc) = match raw.strip_suffix('Z') {
@@ -124,8 +123,9 @@ pub fn until_to_ical(dtm: &Datetime) -> String {
     out
 }
 
-/// Build an iCalendar date line from a friendly value and optional time
-/// zone, passing the value verbatim when it is not in the friendly form.
+/// Build an iCalendar date line from a friendly value and time zone.
+///
+/// The value is passed verbatim when it is not in the friendly form.
 pub fn date_line(name: &str, value: &str, tz: Option<&str>) -> String {
     match parse_friendly_date(value) {
         Some((date, None, _)) => format!("{name};VALUE=DATE:{date}"),
@@ -141,9 +141,10 @@ pub fn date_line(name: &str, value: &str, tz: Option<&str>) -> String {
     }
 }
 
-/// Parse a friendly date-time into its iCalendar digit parts: the date
-/// (`YYYYMMDD`), an optional time (`HHMMSS`, `None` for an all-day date),
-/// and whether it is UTC.
+/// Parse a friendly date-time into its iCalendar digit parts.
+///
+/// The date (`YYYYMMDD`), an optional time (`HHMMSS`, `None` for an all-day
+/// date), and whether it is UTC.
 pub fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)> {
     let value = value.trim();
     let (rest, utc) = match value
@@ -190,8 +191,9 @@ pub fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)
     Some((date, time, utc))
 }
 
-/// Convert a friendly date back to the `RRULE` `UNTIL` digit form, passing
-/// it through verbatim when it is not friendly.
+/// Convert a friendly date back to the `RRULE` `UNTIL` digit form.
+///
+/// A value not in the friendly form passes through verbatim.
 pub fn friendly_to_ical(value: &str) -> String {
     match parse_friendly_date(value) {
         Some((date, None, _)) => date,

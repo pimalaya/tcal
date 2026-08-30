@@ -1,12 +1,16 @@
-//! Property-based laws of the TOML projection.
+//! # Projection laws
+//!
+//! Property-based laws of the TOML projection, held over generated
+//! calendars and over every golden fixture.
 //!
 //! The projection is only trustworthy if folding it back is a no-op: an
 //! untouched document must leave the calendar exactly as it was, projecting
 //! the folded calendar again must give the very same document, and a
-//! property the vocabulary does not model must come out the other side byte
-//! for byte. The generator below builds calendars out of the modelled
-//! vocabulary in the spelling the projection writes back, so a failure is
-//! the projection's and not the writer's.
+//! property the vocabulary does not model must come out byte for byte.
+//!
+//! The generator below builds calendars out of the modelled vocabulary in
+//! the spelling the projection writes back, so a failure is the
+//! projection's and not the writer's.
 
 use proptest::prelude::*;
 
@@ -38,8 +42,9 @@ fn calendar(lines: &[String]) -> String {
     out
 }
 
-/// Escape a text value the way RFC 5545 section 3.3.11 asks, which is how
-/// the projection writes one back.
+/// Escape a text value the way RFC 5545 section 3.3.11 asks.
+///
+/// That is the spelling the projection writes one back in.
 fn escape(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -47,8 +52,10 @@ fn escape(value: &str) -> String {
         .replace(';', "\\;")
 }
 
-/// A non-empty text value, drawn from an alphabet that includes every
-/// character RFC 5545 escapes, so escaping is exercised rather than avoided.
+/// A non-empty text value.
+///
+/// Its alphabet includes every character RFC 5545 escapes, so escaping is
+/// exercised rather than avoided.
 fn value() -> impl Strategy<Value = String> {
     proptest::collection::vec(
         prop_oneof![
@@ -76,8 +83,9 @@ fn address() -> impl Strategy<Value = String> {
     "[a-z]{3,6}@example\\.com".prop_map(String::from)
 }
 
-/// A property name the vocabulary does not model, which the projection never
-/// shows and apply must keep untouched.
+/// A property name the vocabulary does not model.
+///
+/// The projection never shows one, and apply must keep it untouched.
 fn extension() -> impl Strategy<Value = String> {
     prop_oneof![
         Just("X-CUSTOM".to_owned()),
@@ -97,8 +105,10 @@ fn extension_line() -> impl Strategy<Value = String> {
 }
 
 prop_compose! {
-    /// An iCalendar file holding one event built from the modelled
-    /// vocabulary, plus a few properties outside it.
+    /// An iCalendar file holding one event.
+    ///
+    /// The event is built from the modelled vocabulary, plus a few
+    /// properties outside it.
     fn ical()(
         summary in value(),
         description in prop::option::of(value()),
@@ -120,9 +130,9 @@ prop_compose! {
         alarms in prop::collection::vec(1..60u8, 0..3),
         extensions in prop::collection::vec(extension_line(), 0..3),
     ) -> String {
-        // The language of a summary and an attendee's RSVP are parameters of
-        // a modelled property that the projection never shows, so they are
-        // generated to hold every law to them as well.
+        // NOTE: the language of a summary and an attendee's RSVP are
+        // parameters of a modelled property the projection never shows, so
+        // they are generated to hold every law to them as well.
         let mut lines = match &language {
             Some(language) => vec![format!("SUMMARY;LANGUAGE={language}:{}", escape(&summary))],
             None => vec![format!("SUMMARY:{}", escape(&summary))],
@@ -168,18 +178,20 @@ prop_compose! {
 }
 
 proptest! {
-    /// The foundation: an untouched projection folds back onto the calendar
-    /// it came from, byte for byte. Every other law rests on this one, and a
-    /// calendar written in the form the projection writes back has nothing
-    /// to renormalise, so the comparison can be exact.
+    /// An untouched projection folds back onto the calendar it came from.
+    ///
+    /// Every other law rests on this one. The calendar is written in the
+    /// form the projection writes back, so there is nothing to renormalise
+    /// and the comparison can be exact.
     #[test]
     fn folding_an_untouched_projection_changes_nothing(src in ical()) {
         prop_assert_eq!(round_trip(&src), src.clone());
     }
 
-    /// Projecting, folding and projecting again gives the very same
-    /// document: the projection settles at once rather than converging over
-    /// repeated edits, so a reader never sees a calendar move under them.
+    /// Projecting a folded projection gives the very same document.
+    ///
+    /// The projection settles at once rather than converging over repeated
+    /// edits, so a reader never sees a calendar move under them.
     #[test]
     fn projecting_a_folded_projection_gives_an_identical_document(src in ical()) {
         let once = round_trip(&src);
@@ -187,9 +199,10 @@ proptest! {
         prop_assert_eq!(round_trip(&once), once.clone());
     }
 
-    /// A property the vocabulary does not model is never shown and never
-    /// touched: it comes out of the round trip exactly as it went in, and
-    /// the projection never names it.
+    /// An unmodelled property is never shown and never touched.
+    ///
+    /// It comes out of the round trip exactly as it went in, and the
+    /// projection never names it.
     #[test]
     fn an_unmodelled_property_survives_verbatim(src in ical()) {
         let toml = project(&src);
@@ -218,8 +231,9 @@ fn is_unmodelled(line: &str) -> bool {
     )
 }
 
-/// Every golden fixture survives repeated round trips: one pass settles the
-/// calendar, and a second changes nothing.
+/// Every golden fixture survives repeated round trips.
+///
+/// One pass settles the calendar, and a second changes nothing.
 #[test]
 fn every_fixture_settles_after_one_round_trip() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
@@ -239,8 +253,9 @@ fn every_fixture_settles_after_one_round_trip() {
     }
 }
 
-/// A modelled property keeps the parameters the projection does not show,
-/// the way an unmodelled property keeps everything.
+/// A modelled property keeps the parameters the projection does not show.
+///
+/// An unmodelled property keeps everything the same way.
 #[test]
 fn a_modelled_property_keeps_its_unshown_parameters() {
     for line in [
@@ -254,9 +269,10 @@ fn a_modelled_property_keeps_its_unshown_parameters() {
     }
 }
 
-/// An escape inside a multi-valued item comes back as it was, rather than
-/// eating the space behind it: one reader reads the value, and the escaping
-/// it undoes is the one the projection puts back.
+/// An escape inside a multi-valued item comes back as it was.
+///
+/// The space behind it is not eaten: one reader reads the value, and the
+/// escaping it undoes is the one the projection puts back.
 #[test]
 fn an_escape_in_a_list_item_keeps_the_space_behind_it() {
     for escaped in ["\\,", "\\;", "\\\\"] {
@@ -266,8 +282,9 @@ fn an_escape_in_a_list_item_keeps_the_space_behind_it() {
     }
 }
 
-/// A file holding more than one calendar keeps the ones the projection never
-/// showed: only the first is read, and the rest come out as they went in.
+/// A file holding more than one calendar keeps the ones never shown.
+///
+/// Only the first is read, and the rest come out as they went in.
 #[test]
 fn a_calendar_beside_the_one_being_read_survives() {
     let second = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Other//EN\r\n\

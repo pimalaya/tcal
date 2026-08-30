@@ -25,6 +25,7 @@ use alloc::{
 };
 
 use ical::tree::{
+    codec::mode::Escaper,
     cst::{IcalCst, IcalItem},
     leaf::IcalLeaf,
     line::IcalLine,
@@ -67,8 +68,10 @@ impl fmt::Display for Calendar<'_> {
     }
 }
 
-/// Parse a whole iCalendar stream. A bare component with no `VCALENDAR`
-/// around it is accepted as well as a full calendar.
+/// Parse a whole iCalendar stream.
+///
+/// A bare component with no `VCALENDAR` around it is accepted as well as a
+/// full calendar.
 pub fn parse(input: &str) -> Result<Calendar<'_>> {
     IcalCst::parse_many(input)
         .collect::<core::result::Result<Vec<_>, _>>()
@@ -76,28 +79,35 @@ pub fn parse(input: &str) -> Result<Calendar<'_>> {
         .map_err(|err| TcalError::ParseICalendar(err.to_string()))
 }
 
-/// Whatever holds direct child components: one calendar, or the stream of
-/// them a bare component sits loose in.
+/// Whatever holds direct child components.
+///
+/// That is one calendar, or the stream of them a bare component sits loose
+/// in.
 pub trait Container<'a> {
     /// The direct child components of that name, in source order.
     fn children<'s>(&'s mut self, name: &str) -> impl Iterator<Item = &'s mut IcalCst<'a>>
     where
         'a: 's;
 
-    /// Make them number exactly `count`: append empty ones, or drop the
-    /// surplus from the back so the ones before it keep their bytes.
+    /// Make them number exactly `count`.
+    ///
+    /// Empty ones are appended, and a surplus is dropped from the back so the
+    /// ones before it keep their bytes.
     fn set_child_count(&mut self, name: &str, count: usize);
 }
 
 /// The byte-preserving property edits a fold-back makes to one component.
 pub trait Component<'a>: Container<'a> {
-    /// The logical content lines of the direct properties of that name, in
-    /// source order, each without its line ending.
+    /// The logical content lines of the direct properties of that name.
+    ///
+    /// They come in source order, each without its line ending.
     fn lines(&self, name: &str) -> Vec<String>;
 
-    /// Make those properties exactly `lines`: an unchanged one keeps its own
-    /// bytes, a surplus one is dropped, a missing one is inserted after the
-    /// last property. An empty slice removes them all.
+    /// Make those properties exactly `lines`.
+    ///
+    /// An unchanged one keeps its own bytes, a surplus one is dropped, and a
+    /// missing one is inserted after the last property. An empty slice
+    /// removes them all.
     fn set_lines(&mut self, name: &str, lines: &[String]);
 }
 
@@ -183,8 +193,8 @@ impl<'a> Component<'a> for IcalCst<'a> {
                 continue;
             };
 
-            // A line the document did not move keeps its own bytes, which is
-            // where the folds and the parameter casing of the source live.
+            // NOTE: a line the document did not move keeps its own bytes,
+            // where the folds and parameter casing of the source live.
             if &logical(held) != line {
                 *held = built(line, &eol);
             }
@@ -229,8 +239,9 @@ pub fn children<'c, 'a>(
     nested(component).filter(move |child| named(child, name))
 }
 
-/// Whether a component carries that name, which iCalendar compares without
-/// regard to case (RFC 5545 section 3.1).
+/// Whether a component carries that name.
+///
+/// iCalendar compares a name without regard to case (RFC 5545 section 3.1).
 pub fn named(component: &IcalCst<'_>, name: &str) -> bool {
     component
         .begin
@@ -238,8 +249,10 @@ pub fn named(component: &IcalCst<'_>, name: &str) -> bool {
         .is_some_and(|begin| begin.raw_value_str().eq_ignore_ascii_case(name))
 }
 
-/// The logical content line a property occupies: its name, parameters and
-/// value, without the line ending or the folds it was written with.
+/// The logical content line a property occupies.
+///
+/// That is its name, parameters and value, without the line ending or the
+/// folds it was written with.
 pub fn logical(line: &IcalLine<'_>) -> String {
     let mut out = String::from(line.name.get());
 
@@ -278,6 +291,7 @@ fn param(text: &str) -> IcalParamNode<'static> {
     IcalParamNode {
         name: IcalLeaf(Cow::Owned(name.to_owned())),
         values,
+        escaper: Escaper::default(),
     }
 }
 
@@ -306,8 +320,10 @@ fn crlf() -> String {
     "\r\n".to_owned()
 }
 
-/// Where a new property lands: after the last property already there, else
-/// before the first nested component, else at the end.
+/// Where a new property lands.
+///
+/// After the last property already there, else before the first nested
+/// component, else at the end.
 fn insertion_point(component: &IcalCst<'_>) -> usize {
     if let Some(last) = component
         .items

@@ -1,22 +1,26 @@
 //! # Command-line interface
 //!
-//! The `tcal` binary: three verbs over the [`crate::template`] projection.
+//! The three verbs the `tcal` binary offers over the [`crate::template`]
+//! projection, and how each resolves its source.
 //!
 //! - `template [SOURCE]`: print the TOML scaffold, blank or prefilled from an
 //!   iCalendar. Always emits TOML.
-//! - `edit [SOURCE]`: project, open `$EDITOR`, apply the edits back onto the
-//!   source, and emit the resulting iCalendar. Always emits an iCalendar.
+//!
+//! - `edit [SOURCE]`: project, open `$EDITOR`, fold the edits back onto the
+//!   source, and emit the resulting iCalendar.
+//!
 //! - `merge BASE LOCAL REMOTE OUTPUT`: merge two divergent calendars against
-//!   their base ([`crate::merge`]), edit the result, and write it out once it
-//!   is decided.
+//!   their base ([`crate::merge`]), edit the result, write it out once decided.
 //!
 //! `SOURCE` resolves deterministically: `-` reads stdin, an existing file is
 //! read, otherwise the value is treated as literal iCalendar contents, and
-//! omitting it starts from a blank template. The TOML is an editing affordance;
-//! the only path back to an iCalendar is `edit`, where the original is still in
-//! hand.
+//! omitting it starts from a blank template.
+//!
+//! The TOML is an editing affordance, never an interchange format, so the only
+//! path back to an iCalendar is `edit`, where the original is still in hand.
 
 use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
+
 use std::{
     fs,
     io::{Read, Write, stdin, stdout},
@@ -52,23 +56,30 @@ use crate::{
 #[command(long_version = long_version!())]
 #[command(infer_subcommands = true)]
 pub struct Cli {
+    /// The verb to run.
     #[command(subcommand)]
     pub cmd: Command,
-
+    /// Whether output and errors are rendered as JSON rather than as text.
     #[command(flatten)]
     pub json: JsonFlag,
+    /// Where and how verbosely the logger writes.
+    ///
+    /// tcal emits no records of its own, so these only surface what the
+    /// libraries under it write.
     #[command(flatten)]
     pub log: LogFlags,
 }
 
 /// Top-level subcommands.
+///
+/// A variant carries no documentation of its own: it delegates to the command
+/// type it wraps, whose docs are what clap renders as that subcommand's help.
 #[derive(Subcommand, Debug)]
 pub enum Command {
     #[command(visible_alias = "tpl")]
     Template(TemplateCommand),
     Edit(EditCommand),
     Merge(MergeCommand),
-
     #[command(alias = "completions")]
     Completion(CompletionCommand),
     #[command(alias = "manuals")]
@@ -76,6 +87,7 @@ pub enum Command {
 }
 
 impl Command {
+    /// Run the parsed subcommand.
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         match self {
             Self::Template(cmd) => cmd.execute(printer),
@@ -87,10 +99,11 @@ impl Command {
     }
 }
 
-/// Selection of component types to show, by flag. Cumulative: none shows the
-/// whole calendar (the default), one flattens that type as the document root,
-/// two or more keep the VCALENDAR root and show only those types. Types not
-/// selected are left untouched on save.
+/// Selection of component types to show, by flag.
+///
+/// Cumulative: none shows the whole calendar, one flattens that type as the
+/// document root, and two or more keep the VCALENDAR root and show only those.
+/// A type left unselected is also left untouched on save.
 #[derive(Debug, Parser)]
 pub struct ComponentFlags {
     /// Show events (VEVENT).
@@ -111,8 +124,9 @@ pub struct ComponentFlags {
 }
 
 impl ComponentFlags {
-    /// The selected component type keys, in a stable order. Empty means no
-    /// filter: show every type.
+    /// The selected component type keys, in a stable order.
+    ///
+    /// Empty means no filter, so every type is shown.
     pub fn selected(&self) -> Vec<String> {
         [
             (self.event, "event"),
@@ -131,8 +145,10 @@ impl ComponentFlags {
 /// Print a TOML template, blank or prefilled from an iCalendar.
 #[derive(Debug, Parser)]
 pub struct TemplateCommand {
+    /// The iCalendar to prefill the form from.
     #[command(flatten)]
     pub source: SourceArg,
+    /// The component types the form shows.
     #[command(flatten)]
     pub components: ComponentFlags,
     /// Write to this file instead of stdout.
@@ -141,6 +157,7 @@ pub struct TemplateCommand {
 }
 
 impl TemplateCommand {
+    /// Project the source and write the TOML out.
     pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
         let src = load(&self.source)?;
         let ical = ical::parse(&src)?;
@@ -149,21 +166,25 @@ impl TemplateCommand {
     }
 }
 
-/// Edit an iCalendar as TOML in `$EDITOR`, blank or prefilled from a
-/// source.
+/// Edit an iCalendar as TOML in `$EDITOR`, blank or prefilled from a source.
 #[derive(Debug, Parser)]
 pub struct EditCommand {
+    /// The iCalendar to prefill the form from, and to fold the edits onto.
     #[command(flatten)]
     pub source: SourceArg,
+    /// The component types the form shows, and the only ones it reconciles.
     #[command(flatten)]
     pub components: ComponentFlags,
-    /// Write the resulting iCalendar here instead of stdout (or the
-    /// source file, when editing one in place).
+    /// Write the resulting iCalendar here instead of stdout.
+    ///
+    /// Editing a file writes it back in place, so this is what redirects the
+    /// result elsewhere.
     #[arg(short, long, value_name = "PATH", value_parser = path_parser)]
     pub output: Option<PathBuf>,
 }
 
 impl EditCommand {
+    /// Project the source, edit it, then write the folded-back iCalendar out.
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         let src = load(&self.source)?;
         let ical = ical::parse(&src)?;
@@ -201,6 +222,7 @@ pub struct MergeCommand {
 }
 
 impl MergeCommand {
+    /// Merge the three calendars, edit the outcome, then write it out.
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         let base = read_calendar(&self.base)?;
         let local = read_calendar(&self.local)?;
@@ -215,15 +237,17 @@ impl MergeCommand {
 
         let out = edit_until_applied(printer, &merged.toml, |edited| merged.apply(edited))?;
 
-        // The output is written only here, so a document left undecided or an
-        // editor left unanswered leaves it as it was.
+        // NOTE: the output is written only here, so a document left undecided
+        // or an editor left unanswered leaves it as it was.
         write_out(Some(&self.output), out.as_bytes())
     }
 }
 
-/// Open the editor on a projected buffer and fold the result back, re-opening
-/// the user's own buffer when it comes back unusable so the edits are never
-/// lost. JSON output is non-interactive, so the error propagates there.
+/// Open the editor on a projected buffer and fold the result back.
+///
+/// A buffer that comes back unusable is re-opened as the user left it, so the
+/// edits are never lost. JSON output is non-interactive, so the error
+/// propagates there instead.
 fn edit_until_applied(
     printer: &impl Printer,
     toml: &str,
@@ -266,15 +290,15 @@ fn read_calendar(path: &Path) -> Result<String> {
 /// Positional iCalendar source shared by both verbs.
 #[derive(Debug, Parser)]
 pub struct SourceArg {
-    /// A path to an iCalendar file, raw iCalendar contents, or `-` for
-    /// stdin. Omit to start from a blank template.
+    /// A path to an iCalendar file, raw iCalendar contents, or `-` for stdin.
+    ///
+    /// Omit it to start from a blank template.
     #[arg(value_name = "SOURCE")]
     pub source: Option<String>,
 }
 
 impl SourceArg {
-    /// Resolve the source into iCalendar text, or `None` for a blank
-    /// template.
+    /// Resolve the source into iCalendar text, `None` for a blank template.
     pub fn resolve(&self) -> Result<Option<String>> {
         let Some(source) = &self.source else {
             return Ok(None);
@@ -303,8 +327,9 @@ impl SourceArg {
         bail!("Source {source:?} is neither a readable file nor iCalendar contents")
     }
 
-    /// The source as an existing file path, when it resolves to one; used for
-    /// the in-place write default of `edit`.
+    /// The source as an existing file path, when it resolves to one.
+    ///
+    /// This is the in-place write default of `edit`.
     fn file_path(&self) -> Option<PathBuf> {
         let source = self.source.as_ref()?;
 
@@ -317,15 +342,16 @@ impl SourceArg {
     }
 }
 
-/// Load the raw source iCalendar text, or seed a fresh one for a blank
-/// template. Returning the original text (not a parsed model) lets
+/// Load the raw source iCalendar text, seeding a fresh one when blank.
+///
+/// Returning the original text rather than a parsed model is what lets
 /// [`template::apply`] preserve every untouched byte.
 fn load(source: &SourceArg) -> Result<String> {
     match source.resolve()? {
         Some(text) => Ok(text),
         None => {
-            // A new event is seeded with a fresh UID and DTSTAMP so the result
-            // is a valid VEVENT from the start.
+            // NOTE: a new event is seeded with a fresh UID and DTSTAMP so the
+            // result is a valid VEVENT from the start.
             let stamp = Utc::now().format("%Y%m%dT%H%M%SZ");
 
             Ok(format!(

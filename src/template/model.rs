@@ -28,37 +28,29 @@ use crate::template::{
 
 /// Shape of a modeled property, driving both projection and emission.
 pub(crate) enum Kind {
-    /// Bare key; `escape` set for the TEXT properties whose value is
-    /// escaped on the wire.
+    /// Bare key; `escape` marks the TEXT properties escaped on the wire.
     Scalar { escape: bool },
-
-    /// Closed RFC 5545 vocabulary (`STATUS`, `CLASS`, ...): listed lowercase
-    /// in the hint, uppercased to canonical form on export.
+    /// Closed RFC 5545 vocabulary (`STATUS`, `CLASS`, ...).
+    ///
+    /// Listed lowercase in the hint, uppercased to canonical form on export.
     Enum,
-
     /// Integer, rendered as a bare TOML number.
     Number,
-
     /// Multi-valued text joined on `sep` (`CATEGORIES`).
     List { sep: char },
-
     /// Date or date-time as a friendly value plus an adjacent `<key>-tz` key.
     Date,
-
     /// Calendar address, projected without its `mailto:` scheme.
     CalAddress,
-
     /// UTC offset (`TZOFFSETFROM`/`TZOFFSETTO`), projected as `±HHMM`.
     Offset,
-
     /// Repeatable attendee with `CN` / `ROLE` / `PARTSTAT` parameters.
     Attendee,
-
     /// Recurrence rule as dotted `<key>.*` keys (see [`recur_lines`]).
     Recur,
-
-    /// Duration as dotted `<key>.{week,day,...}` keys, sign implied by
-    /// context (`negative` for an alarm trigger); see [`duration_lines`].
+    /// Duration as dotted `<key>.{week,day,...}` keys, see [`duration_lines`].
+    ///
+    /// The sign is implied by context, `negative` for an alarm trigger.
     Duration { negative: bool },
 }
 
@@ -69,20 +61,23 @@ impl Kind {
     }
 }
 
-/// A modeled property and how it maps to TOML: TOML `key`, iCalendar `name`,
-/// optional `hint`, and mapping `kind`.
+/// A modeled property and how it maps to TOML.
 pub(crate) struct Field {
+    /// TOML key.
     pub(crate) key: &'static str,
+    /// Canonical iCalendar property name.
     pub(crate) name: &'static str,
+    /// Inline hint shown next to the value, rendered as ` # <hint>`.
     hint: Option<&'static str>,
+    /// Mapping shape.
     pub(crate) kind: Kind,
 }
 
-/// The modeled `VEVENT` fields, grouped by shape: the bare scalar keys
-/// (the headline `summary`/`description` leading), then the dates, the
-/// duration, and the recurrence, each its own group, with the sectioned
-/// `attendee` last (a TOML array-of-tables header must follow all of its
-/// table's bare keys).
+/// The modeled `VEVENT` fields, grouped by shape.
+///
+/// The bare scalars lead, `summary` and `description` first, then the
+/// dates, the duration and the recurrence, with the sectioned `attendee`
+/// last: a TOML array-of-tables header must follow its table's bare keys.
 const FIELDS: &[Field] = &[
     Field {
         key: "summary",
@@ -176,9 +171,10 @@ const FIELDS: &[Field] = &[
     },
 ];
 
-/// The modeled `VALARM` vocabulary, projected as repeatable `[[alarm]]`
-/// blocks. Kept to plain scalars: alarm values are short codes and
-/// durations, not dates or addresses.
+/// The modeled `VALARM` vocabulary, as repeatable `[[alarm]]` blocks.
+///
+/// Kept to plain scalars: alarm values are short codes and durations, not
+/// dates or addresses.
 const VALARM_FIELDS: &[Field] = &[
     Field {
         key: "summary",
@@ -218,8 +214,10 @@ const VALARM_FIELDS: &[Field] = &[
     },
 ];
 
-/// Modeled `VTODO` fields: like an event, but with `due`/`completed`/
-/// `percent` instead of `dtend`/`transparency`.
+/// Modeled `VTODO` fields.
+///
+/// Like an event, but with `due`/`completed`/`percent` instead of
+/// `dtend`/`transparency`.
 const TODO_FIELDS: &[Field] = &[
     Field {
         key: "summary",
@@ -457,8 +455,9 @@ const TZRULE_FIELDS: &[Field] = &[
     },
 ];
 
-/// Modeled `VTIMEZONE` fields; its transitions are the nested `standard`
-/// and `daylight` sub-components.
+/// Modeled `VTIMEZONE` fields.
+///
+/// Its transitions are the nested `standard` and `daylight` sub-components.
 const TIMEZONE_FIELDS: &[Field] = &[Field {
     key: "id",
     name: "TZID",
@@ -466,8 +465,7 @@ const TIMEZONE_FIELDS: &[Field] = &[Field {
     kind: Kind::Scalar { escape: false },
 }];
 
-/// A modeled iCalendar component: its TOML key, its iCalendar name, its
-/// fields, and its nested child components.
+/// A modeled iCalendar component and how it maps to TOML.
 pub(crate) struct Spec {
     /// TOML array-of-tables key (e.g. `event`).
     pub(crate) key: &'static str,
@@ -479,6 +477,7 @@ pub(crate) struct Spec {
     pub(crate) children: &'static [&'static Spec],
 }
 
+/// The `VALARM` spec, nested in an event or a to-do.
 static VALARM: Spec = Spec {
     key: "alarm",
     name: "VALARM",
@@ -486,6 +485,7 @@ static VALARM: Spec = Spec {
     children: &[],
 };
 
+/// The `STANDARD` spec, a time zone's rule outside daylight saving.
 static STANDARD: Spec = Spec {
     key: "standard",
     name: "STANDARD",
@@ -493,6 +493,7 @@ static STANDARD: Spec = Spec {
     children: &[],
 };
 
+/// The `DAYLIGHT` spec, a time zone's daylight saving rule.
 static DAYLIGHT: Spec = Spec {
     key: "daylight",
     name: "DAYLIGHT",
@@ -500,6 +501,7 @@ static DAYLIGHT: Spec = Spec {
     children: &[],
 };
 
+/// The `VEVENT` spec, the one a flat, unsectioned document defaults to.
 pub(crate) static VEVENT: Spec = Spec {
     key: "event",
     name: "VEVENT",
@@ -507,6 +509,7 @@ pub(crate) static VEVENT: Spec = Spec {
     children: &[&VALARM],
 };
 
+/// The `VTODO` spec, a task with a due date and a completion state.
 static VTODO: Spec = Spec {
     key: "todo",
     name: "VTODO",
@@ -514,6 +517,7 @@ static VTODO: Spec = Spec {
     children: &[&VALARM],
 };
 
+/// The `VJOURNAL` spec, a dated note.
 static VJOURNAL: Spec = Spec {
     key: "journal",
     name: "VJOURNAL",
@@ -521,6 +525,7 @@ static VJOURNAL: Spec = Spec {
     children: &[],
 };
 
+/// The `VFREEBUSY` spec, a busy-time report over a window.
 static VFREEBUSY: Spec = Spec {
     key: "free-busy",
     name: "VFREEBUSY",
@@ -528,6 +533,7 @@ static VFREEBUSY: Spec = Spec {
     children: &[],
 };
 
+/// The `VTIMEZONE` spec, a time zone and its transition rules.
 static VTIMEZONE: Spec = Spec {
     key: "timezone",
     name: "VTIMEZONE",
@@ -536,6 +542,7 @@ static VTIMEZONE: Spec = Spec {
 };
 
 /// The top-level component types tcal models, in projection order.
+///
 /// Everything else is preserved verbatim.
 pub(crate) static TOP_LEVEL: &[&Spec] = &[&VEVENT, &VTODO, &VJOURNAL, &VFREEBUSY, &VTIMEZONE];
 
@@ -575,10 +582,9 @@ impl Field {
                     .and_then(|line| param(line, "TZID"))
                     .filter(|zone| !zone.is_empty());
 
-                // A digit value projects as a native TOML date or date-time;
-                // anything else falls back to the string the calendar wrote,
-                // so a form the model does not read still round-trips. The
-                // named zone, if any, is kept beside it.
+                // NOTE: a value not in digit form falls back to the string
+                // the calendar wrote, so a form the model cannot read still
+                // round-trips.
                 let (rhs, zone) = match &dtm {
                     Some(dtm) => ((*dtm).to_string(), (!is_utc(dtm)).then_some(tzid).flatten()),
                     None => (toml_str(&value), tzid.filter(|_| !value.is_empty())),
@@ -589,9 +595,9 @@ impl Field {
                     hint: self.hint.map(str::to_owned),
                 }];
 
-                // The zone key is kept only for a named zone (a UTC or
-                // floating value needs none), and shown empty in the blank
-                // scaffold as the affordance to add one.
+                // NOTE: a UTC or floating value needs no zone key, but the
+                // blank scaffold shows an empty one as the affordance to
+                // add a zone.
                 if zone.is_some() || entry.is_none() {
                     lines.push(Line {
                         lhs: format!("{}-tz = {}", self.key, toml_str(&zone.unwrap_or_default())),
@@ -622,8 +628,8 @@ impl Field {
 
             Kind::Duration { .. } => duration_lines(entries.first().copied(), self.key, self.hint),
 
-            // Attendees need their parent's TOML prefix, so they are
-            // rendered by `attendee_section`, not here.
+            // NOTE: `attendee_section` renders these, holding the parent
+            // prefix they need.
             Kind::Attendee => unreachable!("attendee is rendered with its parent prefix"),
         }
     }
@@ -640,15 +646,11 @@ impl Field {
         }
     }
 
-    /// This field's iCalendar content line(s) built from a TOML table
-    /// (the edited document, or a single `[[alarm]]` table), without an
-    /// end of line, skipping empty values. Empty when the field is absent
-    /// or blank, so [`crate::ical::Component::set_lines`] removes it.
+    /// This field's iCalendar content lines, built from a TOML table.
     ///
-    /// `originals` are the component's own lines for this property, in the
-    /// order the projection showed them. Each line is patched rather than
-    /// rebuilt, so the parameters the document does not write are the ones
-    /// the component already carried.
+    /// Empty when absent or blank, so [`crate::ical::Component::set_lines`]
+    /// removes the property. `originals` are its lines in projection order,
+    /// each patched rather than rebuilt: a parameter the document omits stays.
     pub(crate) fn content_lines(
         &self,
         source: &dyn TableLike,
