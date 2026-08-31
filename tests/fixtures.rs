@@ -20,6 +20,8 @@
 
 use std::{fs, path::Path};
 
+use tcal::template::TcalTemplate;
+
 /// The component-type flags a fixture mode selects (`all` = no filter).
 fn flags(mode: &str) -> Vec<String> {
     if mode == "all" {
@@ -50,9 +52,12 @@ fn fixtures_project_and_round_trip() {
 
         let ics = fs::read_to_string(dir.join(format!("{name}.ics"))).unwrap();
         let expected = fs::read_to_string(&path).unwrap();
-        let calendar = tcal::ical::parse(&ics).unwrap();
+        let template = TcalTemplate::parse(&ics)
+            .unwrap()
+            .with_types(&flags(mode))
+            .unwrap();
 
-        let projected = tcal::template::project_with(&calendar, &flags(mode)).unwrap();
+        let projected = template.project();
         assert_eq!(
             projected,
             expected,
@@ -61,7 +66,7 @@ fn fixtures_project_and_round_trip() {
         );
 
         if !dir.join(format!("{name}.lossy")).exists() {
-            let round_trip = tcal::template::apply_with(&ics, &expected, &flags(mode)).unwrap();
+            let round_trip = template.apply(&expected).unwrap();
             assert_eq!(round_trip, ics, "round-trip mismatch: {}", path.display());
         }
     }

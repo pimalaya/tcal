@@ -13,7 +13,7 @@ Everything below documents only what differs from the Pimalaya standards.
 
 ## Feature matrix
 
-tcal speaks no protocol, so the layered build of the org guide does not apply here. It has one feature, `cli`, off by default: it carries the binary, clap, the editor and the clock, and it is the only thing pulling in the standard library.
+tCal speaks no protocol, so the layered build of the org guide does not apply here. It has one feature, `cli`, off by default: it carries the binary, clap, the editor and the clock, and it is the only thing pulling in the standard library.
 
 Build both, so that nothing std-only leaks into the `no_std` core:
 
@@ -22,7 +22,7 @@ cargo build                                # the library alone, no_std over allo
 cargo build --features cli                 # the library and the binary above it
 ```
 
-The manifest patches ical-rs to its git repository, the projection tracking that syntax tree too closely to sit on a release. Point the patch at a working copy when changing both at once:
+The manifest patches ical-rs to a working copy beside this one, ical-rs not being released yet and the projection tracking that syntax tree too closely to sit on a release anyway. Point the patch elsewhere when your checkout is:
 
 ```sh
 cargo test --all-features --config 'patch.crates-io.ical-rs.path="../ical"'

@@ -20,7 +20,7 @@
 use proptest::prelude::*;
 use tcal::{
     error::TcalError,
-    merge::{Merge, Merged},
+    merge::{TcalMerge, TcalMerged},
 };
 
 /// One organised, attended event with two alarms.
@@ -148,8 +148,8 @@ fn side(spec: &Contested, value: &str, removes: bool) -> String {
 /// Merge two sides of one contested property against the shared ancestor.
 ///
 /// The local side removes the neighbouring attendee where it does.
-fn merged(spec: &Contested, local: &str, remote: &str, removes: bool) -> Merged {
-    let merged = Merge {
+fn merged(spec: &Contested, local: &str, remote: &str, removes: bool) -> TcalMerged {
+    let merged = TcalMerge {
         base: BASE,
         local: &side(spec, local, removes),
         remote: &side(spec, remote, false),
@@ -166,7 +166,7 @@ fn merged(spec: &Contested, local: &str, remote: &str, removes: bool) -> Merged 
 /// A document announcing one and holding none sends the reader to decide
 /// something it never shows them, then parses, applies and takes one side
 /// without a word, which is the whole forcing gone.
-fn announces_what_it_holds(merged: &Merged) {
+fn announces_what_it_holds(merged: &TcalMerged) {
     assert_eq!(
         announced(&merged.toml),
         merged.toml.matches("# conflict, keep one").count(),
@@ -397,7 +397,7 @@ fn a_contested_alarm_stays_one_alarm() {
     let local = BASE.replace("TRIGGER:-PT5M", "TRIGGER:-PT6M");
     let remote = BASE.replace("TRIGGER:-PT5M", "TRIGGER:-PT7M");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -425,7 +425,7 @@ fn a_contested_attendee_stays_one_attendee() {
     let local = BASE.replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=ACCEPTED;CN=Bob");
     let remote = BASE.replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=DECLINED;CN=Bob");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -467,7 +467,7 @@ fn two_sides_changing_different_keys_of_one_attendee_agree() {
         "PARTSTAT=NEEDS-ACTION;ROLE=CHAIR;CN=Bob",
     );
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -491,7 +491,7 @@ fn a_collision_the_projection_cannot_tell_apart_is_a_comment() {
     let local = BASE.replace("PARTSTAT=NEEDS-ACTION;CN=Ada", "RSVP=TRUE;CN=Ada");
     let remote = BASE.replace("PARTSTAT=NEEDS-ACTION;CN=Ada", "RSVP=FALSE;CN=Ada");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -527,7 +527,7 @@ fn a_multi_line_value_is_contested_whole() {
         "DTSTART;TZID=Europe/Berlin:20260105T110000",
     );
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: &base,
         local: &local,
         remote: &remote,
@@ -580,7 +580,7 @@ fn a_removal_against_an_update_is_a_comment() {
     let local = BASE.replace("SUMMARY:Standup\r\n", "");
     let remote = BASE.replace("SUMMARY:Standup", "SUMMARY:Team standup");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -605,7 +605,7 @@ fn a_rule_against_an_instance_is_a_comment() {
     let local = SERIES.replace("RRULE:FREQ=DAILY", "RRULE:FREQ=WEEKLY");
     let remote = SERIES.replace("DTSTART:20260107T100000Z", "DTSTART:20260107T110000Z");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: SERIES,
         local: &local,
         remote: &remote,
@@ -628,7 +628,7 @@ fn an_unprojectable_collision_keeps_the_local_value_and_says_so() {
     let local = base.replace("X-FOO:one", "X-FOO:two");
     let remote = base.replace("X-FOO:one", "X-FOO:three");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: &base,
         local: &local,
         remote: &remote,
@@ -655,7 +655,7 @@ fn a_long_note_wraps_under_itself() {
     let local = base.replace("X-FOO:one", "X-FOO:two");
     let remote = base.replace("X-FOO:one", "X-FOO:three");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: &base,
         local: &local,
         remote: &remote,
@@ -686,7 +686,7 @@ fn the_refusal_names_a_key_the_document_writes() {
     let local = BASE.replace("TRIGGER:-PT5M", "TRIGGER:-PT6M");
     let remote = BASE.replace("TRIGGER:-PT5M", "TRIGGER:-PT7M");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,
@@ -722,7 +722,7 @@ fn a_list_union_is_said_in_the_header() {
     let local = base.replace("CATEGORIES:a,b", "CATEGORIES:c,d");
     let remote = base.replace("CATEGORIES:a,b", "CATEGORIES:e,f");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: &base,
         local: &local,
         remote: &remote,
@@ -768,7 +768,7 @@ fn a_removal_does_not_swallow_a_neighbours_collision() {
         .replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=ACCEPTED;CN=Bob");
     let remote = BASE.replace("PARTSTAT=NEEDS-ACTION;CN=Bob", "PARTSTAT=DECLINED;CN=Bob");
 
-    let merged = Merge {
+    let merged = TcalMerge {
         base: BASE,
         local: &local,
         remote: &remote,

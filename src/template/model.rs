@@ -14,15 +14,15 @@ use alloc::{
 use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
-use crate::template::{
-    datetime::{DATE_HINT, date_line, is_utc, toml_date, toml_date_line},
-    duration::{duration_lines, duration_value},
-    line::Line,
-    patch,
-    recurrence::{recur_lines, recur_rule},
-    util::{
-        ensure_mailto, escape, items, param, push_param, strip_mailto, tables, text, toml_array,
-        toml_number, toml_str,
+use crate::{
+    ical::TcalProp,
+    template::{
+        datetime::{DATE_HINT, date_line, is_utc, toml_date, toml_date_line},
+        duration::{duration_lines, duration_value},
+        line::Line,
+        patch::{Content, ensure_mailto, escape, strip_mailto},
+        recurrence::{recur_lines, recur_rule},
+        toml::{push_param, tables, toml_array, toml_number, toml_str},
     },
 };
 
@@ -541,7 +541,7 @@ static VTIMEZONE: Spec = Spec {
     children: &[&STANDARD, &DAYLIGHT],
 };
 
-/// The top-level component types tcal models, in projection order.
+/// The top-level component types tCal models, in projection order.
 ///
 /// Everything else is preserved verbatim.
 pub(crate) static TOP_LEVEL: &[&Spec] = &[&VEVENT, &VTODO, &VJOURNAL, &VFREEBUSY, &VTIMEZONE];
@@ -551,7 +551,7 @@ impl Field {
     pub(crate) fn lines(&self, entries: &[&IcalLine<'_>]) -> Vec<Line> {
         match &self.kind {
             Kind::Scalar { .. } | Kind::Enum => {
-                let value = entries.first().map(|line| text(line)).unwrap_or_default();
+                let value = entries.first().map(|line| line.text()).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -559,7 +559,7 @@ impl Field {
             }
 
             Kind::Number => {
-                let value = entries.first().map(|line| text(line)).unwrap_or_default();
+                let value = entries.first().map(|line| line.text()).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_number(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -567,7 +567,7 @@ impl Field {
             }
 
             Kind::List { .. } => {
-                let values: Vec<String> = entries.iter().flat_map(|line| items(line)).collect();
+                let values: Vec<String> = entries.iter().flat_map(|line| line.items()).collect();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_array(&values)),
                     hint: self.hint.map(str::to_owned),
@@ -576,10 +576,10 @@ impl Field {
 
             Kind::Date => {
                 let entry = entries.first();
-                let value = entry.map(|line| text(line)).unwrap_or_default();
+                let value = entry.map(|line| line.text()).unwrap_or_default();
                 let dtm = toml_date(&value);
                 let tzid = entry
-                    .and_then(|line| param(line, "TZID"))
+                    .and_then(|line| line.param_value("TZID"))
                     .filter(|zone| !zone.is_empty());
 
                 // NOTE: a value not in digit form falls back to the string
@@ -609,7 +609,7 @@ impl Field {
             }
 
             Kind::CalAddress => {
-                let value = entries.first().map(|line| text(line)).unwrap_or_default();
+                let value = entries.first().map(|line| line.text()).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(strip_mailto(&value))),
                     hint: self.hint.map(str::to_owned),
@@ -617,7 +617,7 @@ impl Field {
             }
 
             Kind::Offset => {
-                let value = entries.first().map(|line| text(line)).unwrap_or_default();
+                let value = entries.first().map(|line| line.text()).unwrap_or_default();
                 vec![Line {
                     lhs: format!("{} = {}", self.key, toml_str(&value)),
                     hint: self.hint.map(str::to_owned),
@@ -628,8 +628,6 @@ impl Field {
 
             Kind::Duration { .. } => duration_lines(entries.first().copied(), self.key, self.hint),
 
-            // NOTE: `attendee_section` renders these, holding the parent
-            // prefix they need.
             Kind::Attendee => unreachable!("attendee is rendered with its parent prefix"),
         }
     }
@@ -648,7 +646,7 @@ impl Field {
 
     /// This field's iCalendar content lines, built from a TOML table.
     ///
-    /// Empty when absent or blank, so [`crate::ical::Component::set_lines`]
+    /// Empty when absent or blank, so [`crate::ical::TcalComponent::set_lines`]
     /// removes the property. `originals` are its lines in projection order,
     /// each patched rather than rebuilt: a parameter the document omits stays.
     pub(crate) fn content_lines(
@@ -776,9 +774,9 @@ impl Field {
         lines
             .iter()
             .enumerate()
-            .map(|(at, line)| {
-                let original = originals.get(at).map(String::as_str);
-                patch::rewritten(original, line, self.params())
+            .map(|(at, line)| match originals.get(at) {
+                Some(original) => Content(original).rewritten(line, self.params()),
+                None => line.clone(),
             })
             .collect()
     }

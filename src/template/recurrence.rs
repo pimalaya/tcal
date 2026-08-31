@@ -1,7 +1,7 @@
 //! # Recurrence rules
 //!
 //! `RRULE` as dotted `<prefix>.*` keys of friendly parts, with a raw escape
-//! hatch for the parts tcal does not model.
+//! hatch for the parts tCal does not model.
 
 use alloc::{
     borrow::ToOwned,
@@ -14,13 +14,16 @@ use alloc::{
 use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
-use crate::template::{
-    datetime::{friendly_to_ical, toml_date, until_to_ical},
-    line::{Line, int_line},
-    util::{raw, table_int, table_text, toml_array, toml_int_array, toml_str},
+use crate::{
+    ical::TcalProp,
+    template::{
+        datetime::{friendly_to_ical, toml_date, until_to_ical},
+        line::{Line, int_line},
+        toml::{table_int, table_text, toml_array, toml_int_array, toml_str},
+    },
 };
 
-/// The `RRULE` tokens tcal models, in the order they are written back.
+/// The `RRULE` tokens tCal models, in the order they are written back.
 ///
 /// A rule using any other token is shown raw, so that it round-trips.
 const RECUR_KEYS: &[&str] = &[
@@ -37,10 +40,10 @@ const RECUR_KEYS: &[&str] = &[
 
 /// Project a recurrence entry as dotted `<prefix>.*` keys of friendly parts.
 ///
-/// A rule using a part tcal does not model is shown as a single raw
+/// A rule using a part tCal does not model is shown as a single raw
 /// `<prefix>.rule` key instead.
 pub fn recur_lines(entry: Option<&IcalLine<'_>>, prefix: &str) -> Vec<Line> {
-    let rule = entry.map(raw).filter(|rule| !rule.is_empty());
+    let rule = entry.map(TcalProp::raw).filter(|rule| !rule.is_empty());
     let parts = rule.as_deref().map(parse_rrule).unwrap_or_default();
 
     if let Some(rule) = &rule
@@ -50,7 +53,7 @@ pub fn recur_lines(entry: Option<&IcalLine<'_>>, prefix: &str) -> Vec<Line> {
     {
         return vec![Line {
             lhs: format!("{prefix}.rule = {}", toml_str(rule)),
-            hint: Some("raw RRULE; has parts tcal does not model".to_owned()),
+            hint: Some("raw RRULE; has parts tCal does not model".to_owned()),
         }];
     }
 

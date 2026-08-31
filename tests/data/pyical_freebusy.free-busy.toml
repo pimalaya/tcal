@@ -1,7 +1,7 @@
-# iCalendar free-busy as TOML, edited by tcal.
+# iCalendar free-busy as TOML, edited by tCal.
 #
 # Fill what you need; empty fields are ignored. Other
-# components and properties tcal does not model are kept
+# components and properties tCal does not model are kept
 # verbatim, not shown here.
 
 organizer = ""										# email address

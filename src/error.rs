@@ -2,23 +2,19 @@
 //!
 //! The crate-wide error and result types.
 
-use core::result;
+use core::{error, fmt, result};
 
 use alloc::string::String;
 
-use thiserror::Error;
-
 /// The global `Error` enum of the library.
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum TcalError {
     /// The input does not read as an iCalendar.
-    #[error("Cannot parse iCalendar: {0}")]
     ParseICalendar(String),
     /// One of a merge's three calendars does not read.
     ///
     /// It is named by the side it was given as, since the three are otherwise
     /// indistinguishable to the reader.
-    #[error("Cannot read the {side} calendar: {message}")]
     ReadCalendar {
         /// The side the unreadable calendar was given as.
         side: &'static str,
@@ -29,15 +25,45 @@ pub enum TcalError {
     ///
     /// It is written as one key per side, which TOML refuses as a duplicate
     /// key, so an undecided document cannot be applied.
-    #[error("Property {0} is left undecided: keep one of its lines and delete the others")]
     Undecided(String),
     /// The edited TOML buffer is not valid TOML.
-    #[error("Cannot parse TOML buffer")]
-    ParseToml(#[source] toml_edit::TomlError),
-    /// A requested component type key names no modeled component type.
-    #[error("Unknown component {0:?}; expected event, todo, journal, free-busy or timezone")]
+    ParseToml(toml_edit::TomlError),
+    /// A requested component type key names no modelled component type.
     UnknownComponent(String),
 }
 
+impl fmt::Display for TcalError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ParseICalendar(message) => {
+                write!(f, "Cannot parse iCalendar: {message}")
+            }
+            Self::ReadCalendar { side, message } => {
+                write!(f, "Cannot read the {side} calendar: {message}")
+            }
+            Self::Undecided(key) => {
+                write!(f, "Property {key} is left undecided: ")?;
+                write!(f, "keep one of its lines and delete the others")
+            }
+            Self::ParseToml(_) => {
+                write!(f, "Cannot parse TOML buffer")
+            }
+            Self::UnknownComponent(key) => {
+                write!(f, "Unknown component {key:?}; ")?;
+                write!(f, "expected event, todo, journal, free-busy or timezone")
+            }
+        }
+    }
+}
+
+impl error::Error for TcalError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Self::ParseToml(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
 /// The global `Result` alias of the library.
-pub type Result<T> = result::Result<T, TcalError>;
+pub type TcalResult<T> = result::Result<T, TcalError>;

@@ -1,8 +1,8 @@
-# iCalendar as TOML, edited by tcal.
+# iCalendar as TOML, edited by tCal.
 #
 # Each component is a [[block]]; repeat a block for repeated
 # components, delete one you do not need. Empty fields and empty
-# blocks are ignored. Properties and component types tcal does
+# blocks are ignored. Properties and component types tCal does
 # not model are kept verbatim, not shown here.
 
 [[event]]

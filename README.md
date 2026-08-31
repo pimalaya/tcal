@@ -1,6 +1,6 @@
 # tCal [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
 
-CLI to edit iCalendars as ergonomic TOML
+Edit and merge [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML
 
 ```sh
 $ tcal edit --event
@@ -59,10 +59,6 @@ This repository ships two interfaces: a Rust library projecting an iCalendar to 
 - [Features](#features)
 - [RFC coverage](#rfc-coverage)
 - [Installation](#installation)
-  - [Pre-built binary](#pre-built-binary)
-  - [Cargo](#cargo)
-  - [Nix](#nix)
-  - [Sources](#sources)
 - [Usage](#usage)
 - [AI policy](https://github.com/pimalaya/.github/blob/master/AI_POLICY.md)
 - [License](#license)
@@ -77,7 +73,7 @@ This repository ships two interfaces: a Rust library projecting an iCalendar to 
 - **Structured** recurrence and duration: a rule or a length expands into named parts, with a raw escape hatch for the rest.
 - **Discoverable** properties: every editable property is printed with an empty value, so the form is its own documentation.
 - **Every component type**: events, to-dos, journals, free/busy reports and time zones, narrowed to the ones you ask for.
-- **Minimal, lossless diffs**: only the lines you changed are re-rendered, and what tcal does not model is carried through verbatim.
+- **Minimal, lossless diffs**: only the lines you changed are re-rendered, and what tCal does not model is carried through verbatim.
 - **Three-way merge**: what two sides both changed comes back as duplicate TOML keys, which do not parse until you decide them.
 - **Slim library core**: the projection and the merge build without the standard library, the CLI living behind the opt-in `cli` feature.
 
@@ -146,7 +142,13 @@ nix run
 
 ## Usage
 
-Run `tcal --help` for the command tree, and `tcal <command> --help` for a command's arguments. The library API is documented inline, rendered by `cargo doc --open`.
+### Library
+
+See documentation at [docs.rs](https://docs.rs/tcal/latest/tcal).
+
+### CLI
+
+Run `tcal --help` for the command tree, and `tcal <command> --help` for a command's arguments.
 
 A few real command lines:
 
@@ -164,7 +166,7 @@ tcal merge base.ics local.ics remote.ics merged.ics
 
 A type flag narrows the form and nothing else: a type it does not show is left exactly as it was when the result is written back.
 
-The editor is the one [edit](https://crates.io/crates/edit) resolves, `$VISUAL` first, then `$EDITOR`, then an OS default. tcal exposes no override, so set them in your shell rc file.
+The editor is the one [edit](https://crates.io/crates/edit) resolves, `$VISUAL` first, then `$EDITOR`, then an OS default. tCal exposes no override, so set them in your shell rc file.
 
 A property `tcal merge` could not settle comes back written once per side, under the same TOML key:
 

@@ -504,8 +504,9 @@ dependencies = [
 
 [[package]]
 name = "ical-rs"
-version = "0.2.0"
-source = "git+https://github.com/pimalaya/ical#a0c31977395cce95db0a365005e13ad09587662e"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d69acb636ebfdd3c21e0f829bdc2ce145bd8b5221b58ceeee77b4d347c9cc65"
 dependencies = [
  "memchr",
 ]
@@ -1123,7 +1124,6 @@ dependencies = [
  "log",
  "pimalaya-cli",
  "proptest",
- "thiserror",
  "toml_edit",
  "uuid",
 ]

@@ -14,9 +14,12 @@ use alloc::{
 use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
-use crate::template::{
-    line::{Line, int_line},
-    util::{table_int, table_text, text, toml_str},
+use crate::{
+    ical::TcalProp,
+    template::{
+        line::{Line, int_line},
+        toml::{table_int, table_text, toml_str},
+    },
 };
 
 /// Project a duration entry as dotted magnitude keys, the hint on the first.
@@ -25,7 +28,7 @@ use crate::template::{
 /// is not a plain duration (an absolute date-time trigger) is shown raw as
 /// `<prefix>.raw`, round-tripping intact.
 pub fn duration_lines(entry: Option<&IcalLine<'_>>, prefix: &str, hint: Option<&str>) -> Vec<Line> {
-    let value = entry.map(text).filter(|value| !value.is_empty());
+    let value = entry.map(TcalProp::text).filter(|value| !value.is_empty());
     let parts = value.as_deref().and_then(parse_duration);
 
     if let Some(value) = &value
@@ -33,7 +36,7 @@ pub fn duration_lines(entry: Option<&IcalLine<'_>>, prefix: &str, hint: Option<&
     {
         return vec![Line {
             lhs: format!("{prefix}.raw = {}", toml_str(value)),
-            hint: Some("raw duration; tcal could not break it into parts".to_owned()),
+            hint: Some("raw duration; tCal could not break it into parts".to_owned()),
         }];
     }
 

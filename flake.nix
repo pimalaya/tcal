@@ -1,5 +1,5 @@
 {
-  description = "CLI to edit iCalendars as ergonomic TOML";
+  description = "Edit and merge iCalendars as ergonomic TOML";
 
   inputs = {
     nixpkgs = {

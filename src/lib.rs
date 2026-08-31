@@ -26,28 +26,29 @@
 //!
 //! ## The projection
 //!
-//! A body is read once. [`ical::parse`] turns a whole stream into ical-rs's
-//! byte-faithful syntax tree, and every verb walks that one tree, so no value
-//! passes through a second reader that might normalise it on the way in, where
-//! no test comparing the document against that reader could see it.
+//! A body is read once. [`ical::TcalCalendar::parse`] turns a whole stream into
+//! ical-rs's byte-faithful syntax tree, and every verb walks that one tree, so
+//! no value passes through a second reader that might normalise it on the way
+//! in, where no test comparing the two could see it.
 //!
-//! [`template::project`] walks the tree against the static component and field
-//! tables and writes the form, every modelled component type a `[[block]]`
-//! with its children hanging off it. What the tables do not model is not
-//! shown.
+//! [`template::TcalTemplate::project`] walks that tree against the static
+//! component and field tables and writes the form, every modelled component
+//! type a `[[block]]` with its children hanging off it. What the tables do not
+//! model is not shown.
 //!
 //! A calendar holds several component types, so the form can be narrowed:
-//! [`template::project_with`] takes the types to show, one of them flattening
-//! at the document root, and [`template::apply_with`] reconciles only those,
+//! [`template::TcalTemplate::with_types`] takes the types to show, one of them
+//! flattening at the document root, and a fold-back reconciles only those,
 //! which is what keeps a filtered edit from dropping the rest.
 //!
-//! [`template::apply`] folds an edited form back onto the original text,
-//! patching a modelled line rather than rebuilding it: only the value the
-//! document moved is written anew, and the rest of the line stays the
+//! [`template::TcalTemplate::apply`] folds an edited form back onto that same
+//! tree, patching a modelled line rather than rebuilding it: only the value
+//! the document moved is written anew, and the rest of the line stays the
 //! calendar's own bytes, the parameters the form never showed included.
 //!
-//! That is why applying needs the original text and not just the document:
-//! the TOML is an editing affordance, never an interchange format.
+//! That is why a fold-back is a method on the template the form came from,
+//! rather than a function over a document: the TOML is an editing affordance,
+//! never an interchange format.
 //!
 //! ## The modelled vocabulary
 //!
@@ -66,13 +67,13 @@
 //! restores `mailto:`, a UTC offset, and an attendee section.
 //!
 //! Recurrence and duration are the two that expand into dotted keys, each
-//! with a raw escape hatch for a value tcal cannot break apart. `UID` and
+//! with a raw escape hatch for a value tCal cannot break apart. `UID` and
 //! `DTSTAMP` are deliberately absent, being app-managed: seeded for a new
 //! event and preserved for every other one.
 //!
 //! ## The merge
 //!
-//! [`merge::Merge`] reconciles a local and a remote calendar against the base
+//! [`merge::TcalMerge`] reconciles a local and a remote calendar against the base
 //! they both came from, then renders the outcome through the same projection,
 //! so a merge is read and edited in the form everything else is.
 //!
@@ -99,7 +100,7 @@
 //! naming its side, which makes the same TOML key appear twice.
 //!
 //! TOML forbids duplicate keys, so an undecided document does not parse.
-//! [`merge::Merged::apply`] catches that refusal and names the property left
+//! [`merge::TcalMerged::apply`] catches that refusal and names the property left
 //! undecided rather than reporting a syntax error, and nothing is written
 //! until a person has deleted the line they do not want.
 //!
@@ -114,12 +115,16 @@
 //! enum.
 //!
 //! The projection's own layer sits under it, private to the crate: model holds
-//! the static vocabulary, patch the content-line grammar a fold-back writes
-//! through, datetime, duration and recurrence the values with a shape of their
-//! own, and line and util the comment alignment and the TOML rendering.
+//! the static vocabulary, patch the content-line grammar a fold-back reads and
+//! writes through, toml the TOML side of the same, datetime, duration and
+//! recurrence the values with a shape of their own, and line the alignment.
 //!
-//! The `cli` feature adds the cli module: the three verbs, how each resolves
-//! its source, and the editor round trip. The binary above it is wiring only,
+//! The merge splits the same way: sides reads a conflict against the four
+//! calendars, choice is the contested key that reading yields, and document
+//! writes both into the projection.
+//!
+//! The `cli` feature adds the cli module, one module per verb over the shared
+//! arguments and the editor round trip. The binary above it is wiring only,
 //! and says so in its own header.
 //!
 //! ## The golden fixture database

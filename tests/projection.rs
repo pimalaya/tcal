@@ -13,16 +13,23 @@
 //! projection's and not the writer's.
 
 use proptest::prelude::*;
+use tcal::template::TcalTemplate;
+
+/// Read a calendar the way the CLI does, with no component filter.
+fn template(src: &str) -> TcalTemplate<'_> {
+    TcalTemplate::parse(src).unwrap()
+}
 
 /// Fold an untouched projection of a calendar back onto its own source.
 fn round_trip(src: &str) -> String {
-    let toml = project(src);
-    tcal::template::apply(src, &toml).unwrap()
+    let template = template(src);
+
+    template.apply(&template.project()).unwrap()
 }
 
-/// Project a calendar the way the CLI does with no component filter.
+/// Project a calendar with no component filter.
 fn project(src: &str) -> String {
-    tcal::template::project(&tcal::ical::parse(src).unwrap())
+    template(src).project()
 }
 
 /// Wrap event properties into an iCalendar file.
@@ -295,7 +302,7 @@ fn a_calendar_beside_the_one_being_read_survives() {
     assert_eq!(round_trip(&src), src);
 
     let edited = project(&src).replace("Lunch", "Team lunch");
-    let out = tcal::template::apply(&src, &edited).unwrap();
+    let out = template(&src).apply(&edited).unwrap();
 
     assert!(out.contains("SUMMARY:Team lunch"), "{out}");
     assert!(out.ends_with(second), "{out}");
