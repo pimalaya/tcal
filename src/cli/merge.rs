@@ -1,8 +1,8 @@
 //! # Merge command
 //!
 //! Merging two divergent calendars against their base, then deciding the rest
-//! in `$EDITOR`. It takes four paths rather than a source, a merge needing
-//! three calendars at once and writing the fourth.
+//! in `$EDITOR`. It takes three paths rather than a source, a merge needing
+//! three calendars at once.
 
 use alloc::{format, string::String};
 
@@ -34,8 +34,8 @@ pub struct MergeCommand {
     /// The other side.
     #[arg(value_name = "REMOTE", value_parser = path_parser)]
     pub remote: PathBuf,
-    /// Where to write the resolved calendar.
-    #[arg(value_name = "OUTPUT", value_parser = path_parser)]
+    /// Write the merged calendar here, once the document is decided.
+    #[arg(short, long, value_name = "PATH", value_parser = path_parser)]
     pub output: PathBuf,
 }
 

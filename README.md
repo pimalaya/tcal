@@ -165,7 +165,7 @@ tcal template --event --todo event.ics     # only events and to-dos, as blocks
 tcal edit event.ics                        # edit in $EDITOR, written back in place
 tcal edit - < event.ics > updated.ics      # edit a stream
 tcal edit --output meeting.ics             # start a new event from scratch
-tcal merge base.ics local.ics remote.ics merged.ics
+tcal merge base.ics local.ics remote.ics --output merged.ics
 ```
 
 A type flag narrows the form and nothing else: a type it does not show is left exactly as it was when the result is written back.

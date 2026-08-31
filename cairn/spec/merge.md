@@ -11,7 +11,9 @@ Reconciling two divergent edits of one calendar, and putting what could not be r
 The vocabulary the document is written in is the projection every other verb uses, and folding an edited document back onto bytes is the same `apply` as anywhere else. Nothing here changes either: a merged document is an ordinary projected document with two additions, comments in its header and one key written more than once.
 
 ### Requirement: Merging is a verb over three files
-`merge` SHALL take a base, a local and a remote calendar as paths, plus the path to write, run the three-way merge in process, and project the result as TOML for editing. It SHALL write the output path only once the edited document parses, and SHALL leave it untouched otherwise.
+`merge` SHALL take a base, a local and a remote calendar as its three positional paths, and the path to write as `-o`/`--output`, run the three-way merge in process, and project the result as TOML for editing. It SHALL write the output path only once the edited document parses, and SHALL leave it untouched otherwise.
+
+The three inputs are positional because a merge is meaningless without all three and their order is the one every merge tool uses. The destination is a flag because it is the one path that is written rather than read, and a fourth positional beside three inputs is told apart by counting. tCard spells it the same way.
 
 The capability SHALL be built unconditionally. ical-rs is a plain dependency of every configuration, so gating the merge changes nothing about the crate set and a cargo feature has nothing left to buy.
 
