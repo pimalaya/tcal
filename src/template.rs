@@ -271,13 +271,18 @@ fn field_group(field: &Field) -> (u8, &str) {
 }
 
 /// Render one attendee block under `header`, filled or empty.
-fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&IcalLine<'_>>) {
+fn attendee_block(
+    lines: &mut Vec<Line>,
+    header: &str,
+    entry: Option<&IcalLine<'_>>,
+    statuses: &str,
+) {
     lines.push(Line {
         lhs: format!("[[{header}]]"),
         hint: None,
     });
 
-    lines.extend(attendee_keys(entry));
+    lines.extend(attendee_keys(entry, statuses));
 }
 
 /// The keys of one attendee block, without its `[[header]]` line.
@@ -285,7 +290,10 @@ fn attendee_block(lines: &mut Vec<Line>, header: &str, entry: Option<&IcalLine<'
 /// This is what a merge writes when two sides contest one attendee, since
 /// repeating the header would make a second attendee rather than a duplicate
 /// key.
-pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>) -> Vec<Line> {
+///
+/// `statuses` are the participation statuses the component defines, which RFC
+/// 5545 section 3.2.12 closes differently for each.
+pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>, statuses: &str) -> Vec<Line> {
     let mut lines = Vec::new();
 
     let display_name = entry
@@ -315,7 +323,7 @@ pub(crate) fn attendee_keys(entry: Option<&IcalLine<'_>>) -> Vec<Line> {
         .unwrap_or_default();
     lines.push(Line {
         lhs: format!("status = {}", toml_str(&status)),
-        hint: Some("needs-action, accepted, declined, tentative, delegated".to_owned()),
+        hint: Some(statuses.to_owned()),
     });
 
     lines
@@ -380,10 +388,14 @@ fn project_component(
     let sections: Vec<Vec<Line>> = spec
         .fields
         .iter()
-        .filter(|field| !field.kind.is_simple())
-        .map(|field| {
+        .filter_map(|field| match field.kind {
+            Kind::Attendee { statuses } => Some((field, statuses)),
+            _ => None,
+        })
+        .map(|(field, statuses)| {
             let entries = entries_for(component, field);
-            attendee_section(&entries, &section_header(prefix, field.key))
+            let header = section_header(prefix, field.key);
+            attendee_section(&entries, &header, statuses)
         })
         .collect();
 
@@ -424,14 +436,14 @@ fn section_header(prefix: Option<&str>, key: &str) -> String {
 /// Render an attendee field as one `[[header]]` block per entry.
 ///
 /// A field no entry wrote gets a single empty example instead.
-fn attendee_section(entries: &[&IcalLine<'_>], header: &str) -> Vec<Line> {
+fn attendee_section(entries: &[&IcalLine<'_>], header: &str, statuses: &str) -> Vec<Line> {
     let mut lines = Vec::new();
 
     if entries.is_empty() {
-        attendee_block(&mut lines, header, None);
+        attendee_block(&mut lines, header, None, statuses);
     } else {
         for entry in entries.iter().copied() {
-            attendee_block(&mut lines, header, Some(entry));
+            attendee_block(&mut lines, header, Some(entry), statuses);
         }
     }
 
@@ -549,6 +561,35 @@ mod tests {
         ] {
             assert!(toml.contains(block), "missing {block}");
         }
+    }
+
+    /// RFC 5545 section 3.2.12 closes `PARTSTAT` per component: a to-do also
+    /// accepts `COMPLETED` and `IN-PROCESS`, a journal neither those nor
+    /// `TENTATIVE` and `DELEGATED`.
+    #[test]
+    fn an_attendee_is_hinted_its_own_participation_statuses() {
+        let toml = project("");
+        let block = |header: &str| {
+            toml.split(header)
+                .nth(1)
+                .and_then(|rest| rest.split("\n\n").next())
+                .unwrap()
+                .to_owned()
+        };
+
+        let todo = block("[[todo.attendee]]");
+        assert!(todo.contains("completed, in-process"), "{todo}");
+
+        let journal = block("[[journal.attendee]]");
+        assert!(
+            journal.contains("needs-action, accepted, declined"),
+            "{journal}"
+        );
+        assert!(!journal.contains("tentative"), "{journal}");
+
+        let event = block("[[event.attendee]]");
+        assert!(event.contains("tentative, delegated"), "{event}");
+        assert!(!event.contains("in-process"), "{event}");
     }
 
     #[test]

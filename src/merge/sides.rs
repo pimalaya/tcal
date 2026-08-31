@@ -160,7 +160,7 @@ impl Sides<'_> {
         // NOTE: an attendee projects as a table rather than a key, and
         // repeating its header would make a second attendee instead of a
         // duplicate key, so the contest goes inside the one table it wrote.
-        let choice = if matches!(field.kind, Kind::Attendee) {
+        let choice = if let Kind::Attendee { statuses } = field.kind {
             let entries = entries_for(Some(found.component), field);
             let mut address = found.address;
             address.push((field.key, index_of(&entries, at)?));
@@ -169,9 +169,9 @@ impl Sides<'_> {
                 at: address,
                 key: None,
                 kept: self.kept(local),
-                base: attendee_lines(&self.base, at, field),
-                local: attendee_lines(&self.local, at, field),
-                remote: attendee_lines(&self.remote, at, field),
+                base: attendee_lines(&self.base, at, field, statuses),
+                local: attendee_lines(&self.local, at, field, statuses),
+                remote: attendee_lines(&self.remote, at, field, statuses),
             }
         } else {
             Choice {
@@ -359,12 +359,17 @@ fn field_lines(ical: &TcalCalendar<'_>, at: &IcalPropPath<'_>, field: &Field) ->
 /// The same for an attendee.
 ///
 /// An attendee is one table among the ones its field wrote rather than a key.
-fn attendee_lines(ical: &TcalCalendar<'_>, at: &IcalPropPath<'_>, field: &Field) -> Vec<String> {
+fn attendee_lines(
+    ical: &TcalCalendar<'_>,
+    at: &IcalPropPath<'_>,
+    field: &Field,
+    statuses: &str,
+) -> Vec<String> {
     let component = locate(ical, &at.component).map(|found| found.component);
     let entries = entries_for(component, field);
     let entry = index_of(&entries, at).map(|index| entries[index]);
 
-    attendee_keys(entry)
+    attendee_keys(entry, statuses)
         .into_iter()
         .map(|line| line.lhs)
         .collect()

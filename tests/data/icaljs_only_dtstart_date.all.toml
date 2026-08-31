@@ -100,7 +100,7 @@ recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
 display-name = ""
 value = ""			# email address
 role = ""			# chair, req-participant, opt-participant, non-participant
-status = ""			# needs-action, accepted, declined, tentative, delegated
+status = ""			# needs-action, accepted, declined, tentative, delegated, completed, in-process
 
 [[todo.alarm]]
 summary = ""		# subject line for an email alarm
@@ -146,7 +146,7 @@ recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
 display-name = ""
 value = ""			# email address
 role = ""			# chair, req-participant, opt-participant, non-participant
-status = ""			# needs-action, accepted, declined, tentative, delegated
+status = ""			# needs-action, accepted, declined
 
 [[free-busy]]
 organizer = ""		# email address

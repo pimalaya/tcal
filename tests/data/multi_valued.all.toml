@@ -6,9 +6,9 @@
 # not model are kept verbatim, not shown here.
 
 [[event]]
-summary = "Test Event 1"
+summary = "Workshop"
 description = ""
-categories = []
+categories = ["work", "travel", "travail"]
 location = ""
 url = ""				# https://example.com/event
 organizer = ""				# email address
@@ -17,10 +17,8 @@ priority = ""				# 0 = undefined, 1 = highest, 9 = lowest
 status = ""				# confirmed, tentative, cancelled
 transparency = ""			# opaque, transparent
 
-date-start = 2025-01-15T10:00:00	# 2026-06-13T14:30:00
-date-start-tz = "America/New_York"	# America/New_York; empty for UTC or floating
-date-end = 2025-01-15T11:00:00		# 2026-06-13T14:30:00
-date-end-tz = "America/New_York"	# America/New_York; empty for UTC or floating
+date-start = 2026-01-05T09:00:00Z	# 2026-06-13T14:30:00
+date-end = 2026-01-05T10:00:00Z		# 2026-06-13T14:30:00
 
 duration.week = ""			# event length
 duration.day = ""
@@ -39,67 +37,10 @@ recurrence.by-position = []		# nth occurrence in the period; -1 = last
 recurrence.week-start = ""		# mo, tu, we, th, fr, sa, su
 
 [[event.attendee]]
-display-name = ""
-value = ""				# email address
-role = ""				# chair, req-participant, opt-participant, non-participant
-status = ""				# needs-action, accepted, declined, tentative, delegated
-
-[[event.alarm]]
-summary = ""		# subject line for an email alarm
-description = ""
-action = ""		# display, email, audio
-repeat = ""		# how many extra times to fire: 2
-
-trigger.week = ""	# before the event
-trigger.day = ""
-trigger.hour = ""
-trigger.min = ""
-trigger.sec = ""
-
-duration.week = ""	# with repeat
-duration.day = ""
-duration.hour = ""
-duration.min = ""
-duration.sec = ""
-
-[[event]]
-summary = "Test Event 2"
-description = ""
-categories = []
-location = ""
-url = ""				# https://example.com/event
-organizer = ""				# email address
-class = ""				# public, private, confidential
-priority = ""				# 0 = undefined, 1 = highest, 9 = lowest
-status = ""				# confirmed, tentative, cancelled
-transparency = ""			# opaque, transparent
-
-date-start = 2025-01-16T10:00:00	# 2026-06-13T14:30:00
-date-start-tz = "America/New_York"	# America/New_York; empty for UTC or floating
-date-end = 2025-01-16T11:00:00		# 2026-06-13T14:30:00
-date-end-tz = "America/New_York"	# America/New_York; empty for UTC or floating
-
-duration.week = ""			# event length
-duration.day = ""
-duration.hour = ""
-duration.min = ""
-duration.sec = ""
-
-recurrence.frequency = ""		# secondly, minutely, hourly, daily, weekly, monthly, yearly
-recurrence.interval = ""		# every N periods
-recurrence.count = ""			# total occurrences; alternative to until
-recurrence.until = ""			# 2026-06-13T14:30:00
-recurrence.by-day = []			# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
-recurrence.by-month = []		# 1 to 12
-recurrence.by-month-day = []		# 1 to 31, negative counts from the end (-1 = last)
-recurrence.by-position = []		# nth occurrence in the period; -1 = last
-recurrence.week-start = ""		# mo, tu, we, th, fr, sa, su
-
-[[event.attendee]]
-display-name = ""
-value = ""				# email address
-role = ""				# chair, req-participant, opt-participant, non-participant
-status = ""				# needs-action, accepted, declined, tentative, delegated
+display-name = "Jane Doe"
+value = "jane@example.com"		# email address
+role = "REQ-PARTICIPANT"		# chair, req-participant, opt-participant, non-participant
+status = "NEEDS-ACTION"			# needs-action, accepted, declined, tentative, delegated
 
 [[event.alarm]]
 summary = ""		# subject line for an email alarm
@@ -120,7 +61,7 @@ duration.min = ""
 duration.sec = ""
 
 [[todo]]
-summary = "Test Todo 1"
+summary = ""
 description = ""
 categories = []
 location = ""
@@ -128,7 +69,7 @@ url = ""			# https://example.com/task
 organizer = ""			# email address
 class = ""			# public, private, confidential
 priority = ""			# 0 = undefined, 1 = highest, 9 = lowest
-status = "NEEDS-ACTION"		# needs-action, in-process, completed, cancelled
+status = ""			# needs-action, in-process, completed, cancelled
 percent = ""			# 0 to 100
 
 date-start = ""			# 2026-06-13T14:30:00
@@ -179,7 +120,7 @@ duration.min = ""
 duration.sec = ""
 
 [[journal]]
-summary = "Test Journal 1"
+summary = ""
 description = ""
 categories = []
 url = ""
@@ -207,54 +148,54 @@ role = ""			# chair, req-participant, opt-participant, non-participant
 status = ""			# needs-action, accepted, declined
 
 [[free-busy]]
-organizer = ""		# email address
-periods = []		# 20260613T140000Z/PT1H
+organizer = "chair@example.com"										# email address
+periods = ["20260105T090000Z/20260105T100000Z", "20260105T140000Z/PT1H", "20260105T120000Z/PT2H"]	# 20260613T140000Z/PT1H
 url = ""
 
-date-start = ""		# 2026-06-13T14:30:00
-date-start-tz = ""	# America/New_York; empty for UTC or floating
-date-end = ""		# 2026-06-13T14:30:00
-date-end-tz = ""	# America/New_York; empty for UTC or floating
+date-start = 2026-01-05T00:00:00Z									# 2026-06-13T14:30:00
+date-end = 2026-01-06T00:00:00Z										# 2026-06-13T14:30:00
 
 [[free-busy.attendee]]
 display-name = ""
-value = ""		# email address
-role = ""		# chair, req-participant, opt-participant, non-participant
-status = ""		# needs-action, accepted, declined, tentative, delegated
+value = ""												# email address
+role = ""												# chair, req-participant, opt-participant, non-participant
+status = ""												# needs-action, accepted, declined, tentative, delegated
 
 [[timezone]]
-id = "America/New_York"	# Europe/Paris
+id = ""	# Europe/Paris
 
 [[timezone.standard]]
-name = "EST"				# CET
-offset-from = "-0400"			# +0200
-offset-to = "-0500"			# +0100
+name = ""			# CET
+offset-from = ""		# +0200
+offset-to = ""			# +0100
 
-date-start = 1970-11-01T02:00:00	# local start: 1996-10-27T03:00:00
+date-start = ""			# local start: 1996-10-27T03:00:00
+date-start-tz = ""		# America/New_York; empty for UTC or floating
 
-recurrence.frequency = "yearly"		# secondly, minutely, hourly, daily, weekly, monthly, yearly
-recurrence.interval = ""		# every N periods
-recurrence.count = ""			# total occurrences; alternative to until
-recurrence.until = ""			# 2026-06-13T14:30:00
-recurrence.by-day = ["1su"]		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
-recurrence.by-month = [11]		# 1 to 12
-recurrence.by-month-day = []		# 1 to 31, negative counts from the end (-1 = last)
-recurrence.by-position = []		# nth occurrence in the period; -1 = last
-recurrence.week-start = ""		# mo, tu, we, th, fr, sa, su
+recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
+recurrence.interval = ""	# every N periods
+recurrence.count = ""		# total occurrences; alternative to until
+recurrence.until = ""		# 2026-06-13T14:30:00
+recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
+recurrence.by-month = []	# 1 to 12
+recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
+recurrence.by-position = []	# nth occurrence in the period; -1 = last
+recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
 
 [[timezone.daylight]]
-name = "EDT"				# CET
-offset-from = "-0500"			# +0200
-offset-to = "-0400"			# +0100
+name = ""			# CET
+offset-from = ""		# +0200
+offset-to = ""			# +0100
 
-date-start = 1970-03-08T02:00:00	# local start: 1996-10-27T03:00:00
+date-start = ""			# local start: 1996-10-27T03:00:00
+date-start-tz = ""		# America/New_York; empty for UTC or floating
 
-recurrence.frequency = "yearly"		# secondly, minutely, hourly, daily, weekly, monthly, yearly
-recurrence.interval = ""		# every N periods
-recurrence.count = ""			# total occurrences; alternative to until
-recurrence.until = ""			# 2026-06-13T14:30:00
-recurrence.by-day = ["2su"]		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
-recurrence.by-month = [3]		# 1 to 12
-recurrence.by-month-day = []		# 1 to 31, negative counts from the end (-1 = last)
-recurrence.by-position = []		# nth occurrence in the period; -1 = last
-recurrence.week-start = ""		# mo, tu, we, th, fr, sa, su
+recurrence.frequency = ""	# secondly, minutely, hourly, daily, weekly, monthly, yearly
+recurrence.interval = ""	# every N periods
+recurrence.count = ""		# total occurrences; alternative to until
+recurrence.until = ""		# 2026-06-13T14:30:00
+recurrence.by-day = []		# mo, tu, we, th, fr, sa, su; with an ordinal like -1su, 2mo
+recurrence.by-month = []	# 1 to 12
+recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
+recurrence.by-position = []	# nth occurrence in the period; -1 = last
+recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su

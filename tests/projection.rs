@@ -285,6 +285,132 @@ fn repeated_list_properties_of_one_name_do_not_collapse() {
     assert_eq!(round_trip(&once), once);
 }
 
+/// Removing one item leaves the items of every other line where they were.
+///
+/// The line a value came out of is the one whose parameters describe it, so
+/// counting items off the front of the array instead relabels the French
+/// category as English and drops the French line with it.
+#[test]
+fn removing_an_item_leaves_the_other_lines_alone() {
+    let src = calendar(&[
+        "CATEGORIES;LANGUAGE=en:work,travel".to_owned(),
+        "CATEGORIES;LANGUAGE=fr:travail".to_owned(),
+    ]);
+
+    let edited = project(&src).replace("\"work\", \"travel\", ", "\"work\", ");
+    let out = template(&src).apply(&edited).unwrap();
+
+    assert!(out.contains("CATEGORIES;LANGUAGE=en:work\r\n"), "{out}");
+    assert!(out.contains("CATEGORIES;LANGUAGE=fr:travail\r\n"), "{out}");
+}
+
+/// A line that loses every item is removed rather than given another's.
+///
+/// A free window reported as busy is the calendar saying the opposite of what
+/// it said, which is the cost of taking a line's parameters for items it never
+/// carried.
+#[test]
+fn a_line_that_loses_every_item_is_removed() {
+    let src = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n\
+        BEGIN:VFREEBUSY\r\nUID:fb1@example\r\nDTSTAMP:20260101T000000Z\r\n\
+        FREEBUSY;FBTYPE=BUSY:20260105T090000Z/PT1H,20260105T140000Z/PT1H\r\n\
+        FREEBUSY;FBTYPE=FREE:20260105T120000Z/PT2H\r\n\
+        END:VFREEBUSY\r\nEND:VCALENDAR\r\n";
+
+    let edited = project(src).replace("\"20260105T090000Z/PT1H\", \"20260105T140000Z/PT1H\", ", "");
+    let out = template(src).apply(&edited).unwrap();
+
+    assert!(!out.contains("FBTYPE=BUSY"), "{out}");
+    assert!(
+        out.contains("FREEBUSY;FBTYPE=FREE:20260105T120000Z/PT2H\r\n"),
+        "{out}",
+    );
+}
+
+/// Renaming an item rewrites the line it was on rather than opening a second.
+///
+/// An item no line held fills the room the rename left, so a value the reader
+/// edited in place stays in place.
+#[test]
+fn renaming_an_item_rewrites_its_own_line() {
+    let src = calendar(&["CATEGORIES:work,travel".to_owned()]);
+
+    let edited = project(&src).replace("\"travel\"", "\"leisure\"");
+    let out = template(&src).apply(&edited).unwrap();
+
+    assert!(out.contains("CATEGORIES:work,leisure\r\n"), "{out}");
+    assert_eq!(
+        out.lines()
+            .filter(|line| line.starts_with("CATEGORIES"))
+            .count(),
+        1,
+        "{out}",
+    );
+}
+
+/// Items added to a property holding one line join that line.
+///
+/// This is the README's own example, `categories = ["pimalaya", "cli"]` for
+/// `CATEGORIES:pimalaya,cli`. One line has nothing to disambiguate, so an
+/// added item can only belong to it: writing a second line instead would say
+/// the two categories were recorded apart, which is not what was edited.
+#[test]
+fn items_added_to_a_single_line_join_it() {
+    // NOTE: the empty block of every other component type carries the key
+    // too, so each case names the spelling its own event block holds.
+    let cases = [
+        (calendar(&[]), "categories = []"),
+        (
+            calendar(&["CATEGORIES:pimalaya".to_owned()]),
+            "categories = [\"pimalaya\"]",
+        ),
+    ];
+
+    for (src, held) in cases {
+        let edited = project(&src).replacen(held, "categories = [\"pimalaya\", \"cli\"]", 1);
+        let out = template(&src).apply(&edited).unwrap();
+
+        assert!(out.contains("CATEGORIES:pimalaya,cli\r\n"), "{out}");
+        assert_eq!(
+            out.lines()
+                .filter(|line| line.starts_with("CATEGORIES"))
+                .count(),
+            1,
+            "{out}",
+        );
+    }
+}
+
+/// Items no line held share one new line, rather than one line each.
+///
+/// Which line's parameters they should have carried is the question several
+/// lines make unanswerable, so they carry none, together.
+#[test]
+fn items_no_line_held_share_one_new_line() {
+    let src = calendar(&[
+        "CATEGORIES;LANGUAGE=en:work".to_owned(),
+        "CATEGORIES;LANGUAGE=fr:travail".to_owned(),
+    ]);
+
+    let edited = project(&src).replacen(
+        "[\"work\", \"travail\"]",
+        "[\"work\", \"travail\", \"a\", \"b\"]",
+        1,
+    );
+    let out = template(&src).apply(&edited).unwrap();
+
+    assert!(out.contains("CATEGORIES;LANGUAGE=en:work\r\n"), "{out}");
+    assert!(out.contains("CATEGORIES;LANGUAGE=fr:travail\r\n"), "{out}");
+    assert!(out.contains("CATEGORIES:a,b\r\n"), "{out}");
+    assert_eq!(
+        out.lines()
+            .filter(|line| line.starts_with("CATEGORIES"))
+            .count(),
+        3,
+        "{out}",
+    );
+}
+
 /// A modelled property keeps the parameters the projection does not show.
 ///
 /// An unmodelled property keeps everything the same way.

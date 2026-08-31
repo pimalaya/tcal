@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed a list property losing the parameters of its own lines when an item was removed.
+
+  A component carrying two properties of one list name showed their items as one array, and folding that array back counted the items off the front, line by line. Removing one item therefore slid every item behind it onto the line before: a `FREEBUSY;FBTYPE=FREE` period was reported busy, and a `CATEGORIES;LANGUAGE=fr` category came back English. Each item now goes back to the line it came out of.
+
+- Fixed items added to a list property each opening a line of their own, which had made the README's own example untrue.
+
+  `categories = ["pimalaya", "cli"]` wrote two `CATEGORIES` properties rather than the one the README documents. A property holding at most one line has nothing to disambiguate, so the array is that line's items and an added one joins it, parameters and all. Where several lines do exist the added items share one new line between them instead of taking one each.
+
+- Fixed an attendee being offered another component's participation statuses.
+
+  RFC 5545 section 3.2.12 closes `PARTSTAT` per component. A `[[todo.attendee]]` now offers `completed` and `in-process`, and a `[[journal.attendee]]` offers neither those nor `tentative` and `delegated`.
+
 ## [0.1.0] - 2026-08-31
 
 ### Added

@@ -3,8 +3,6 @@
 //! Each [`Spec`]'s [`Field`]s, and how every [`Kind`] of value projects to and
 //! parses from TOML.
 
-use core::slice;
-
 use alloc::{
     borrow::ToOwned,
     format,
@@ -47,7 +45,11 @@ pub(crate) enum Kind {
     /// UTC offset (`TZOFFSETFROM`/`TZOFFSETTO`), projected as `±HHMM`.
     Offset,
     /// Repeatable attendee with `CN` / `ROLE` / `PARTSTAT` parameters.
-    Attendee,
+    ///
+    /// `statuses` are the participation statuses the component defines, RFC
+    /// 5545 section 3.2.12 closing `PARTSTAT` differently for an event, a
+    /// to-do and a journal.
+    Attendee { statuses: &'static str },
     /// Recurrence rule as dotted `<key>.*` keys (see [`recur_lines`]).
     Recur,
     /// Duration as dotted `<key>.{week,day,...}` keys, see [`duration_lines`].
@@ -59,7 +61,7 @@ pub(crate) enum Kind {
 impl Kind {
     /// A bare/inline key, vs the sectioned attendee array-of-tables.
     pub(crate) fn is_simple(&self) -> bool {
-        !matches!(self, Kind::Attendee)
+        !matches!(self, Kind::Attendee { .. })
     }
 }
 
@@ -169,7 +171,9 @@ const FIELDS: &[Field] = &[
         key: "attendee",
         name: "ATTENDEE",
         hint: None,
-        kind: Kind::Attendee,
+        kind: Kind::Attendee {
+            statuses: "needs-action, accepted, declined, tentative, delegated",
+        },
     },
 ];
 
@@ -315,7 +319,9 @@ const TODO_FIELDS: &[Field] = &[
         key: "attendee",
         name: "ATTENDEE",
         hint: None,
-        kind: Kind::Attendee,
+        kind: Kind::Attendee {
+            statuses: "needs-action, accepted, declined, tentative, delegated, completed, in-process",
+        },
     },
 ];
 
@@ -379,11 +385,16 @@ const JOURNAL_FIELDS: &[Field] = &[
         key: "attendee",
         name: "ATTENDEE",
         hint: None,
-        kind: Kind::Attendee,
+        kind: Kind::Attendee {
+            statuses: "needs-action, accepted, declined",
+        },
     },
 ];
 
 /// Modeled `VFREEBUSY` fields: a busy-time report over a window.
+///
+/// RFC 5545 section 3.2.12 closes `PARTSTAT` per component and defines no
+/// free/busy set, so its attendee is offered an event's.
 const FREEBUSY_FIELDS: &[Field] = &[
     Field {
         key: "organizer",
@@ -419,7 +430,9 @@ const FREEBUSY_FIELDS: &[Field] = &[
         key: "attendee",
         name: "ATTENDEE",
         hint: None,
-        kind: Kind::Attendee,
+        kind: Kind::Attendee {
+            statuses: "needs-action, accepted, declined, tentative, delegated",
+        },
     },
 ];
 
@@ -632,7 +645,7 @@ impl Field {
 
             // NOTE: an attendee has no line of its own. Its keys are written
             // by attendee_keys, under the header its parent component writes.
-            Kind::Attendee => Vec::new(),
+            Kind::Attendee { .. } => Vec::new(),
         }
     }
 
@@ -642,7 +655,7 @@ impl Field {
     /// parameter on the line belongs to the line.
     fn params(&self) -> &'static [&'static str] {
         match self.kind {
-            Kind::Attendee => &["CN", "ROLE", "PARTSTAT"],
+            Kind::Attendee { .. } => &["CN", "ROLE", "PARTSTAT"],
             Kind::Date => &["TZID", "VALUE"],
             _ => &[],
         }
@@ -662,7 +675,9 @@ impl Field {
             return Vec::new();
         };
 
-        let mut lines = Vec::new();
+        // NOTE: each line carries the original it patches onto, which the list
+        // field's own spread decides and every other field takes as its first.
+        let mut lines: Vec<(Option<&String>, String)> = Vec::new();
 
         match &self.kind {
             Kind::Scalar {
@@ -674,13 +689,14 @@ impl Field {
                     } else {
                         value.to_owned()
                     };
-                    lines.push(format!("{}:{}", self.name, value));
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
 
             Kind::Enum => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    lines.push(format!("{}:{}", self.name, value.to_uppercase()));
+                    let value = value.to_uppercase();
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
 
@@ -694,21 +710,22 @@ impl Field {
                             .map(str::to_owned)
                     });
                 if let Some(value) = value {
-                    lines.push(format!("{}:{}", self.name, value));
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
 
             Kind::List { sep } => {
                 if let Some(array) = item.as_array() {
-                    let parts: Vec<String> = array
+                    let values: Vec<&str> = array
                         .iter()
                         .filter_map(|value| value.as_str())
                         .filter(|value| !value.is_empty())
-                        .map(escape)
                         .collect();
 
-                    for items in spread(&parts, originals) {
-                        lines.push(format!("{}:{}", self.name, items.join(&sep.to_string())));
+                    for (original, items) in spread(&values, originals) {
+                        let parts: Vec<String> = items.into_iter().map(escape).collect();
+                        let value = parts.join(&sep.to_string());
+                        lines.push((original, format!("{}:{}", self.name, value)));
                     }
                 }
             }
@@ -720,25 +737,26 @@ impl Field {
                     .filter(|value| !value.is_empty());
 
                 if let Some(dtm) = item.as_datetime() {
-                    lines.push(toml_date_line(self.name, dtm, tz));
+                    lines.push((originals.first(), toml_date_line(self.name, dtm, tz)));
                 } else if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    lines.push(date_line(self.name, value, tz));
+                    lines.push((originals.first(), date_line(self.name, value, tz)));
                 }
             }
 
             Kind::CalAddress => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    lines.push(format!("{}:{}", self.name, ensure_mailto(value)));
+                    let value = ensure_mailto(value);
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
 
             Kind::Offset => {
                 if let Some(value) = item.as_str().filter(|value| !value.is_empty()) {
-                    lines.push(format!("{}:{}", self.name, value));
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
 
-            Kind::Attendee => {
+            Kind::Attendee { .. } => {
                 for table in tables(item) {
                     let Some(value) = table
                         .get("value")
@@ -754,7 +772,7 @@ impl Field {
                     push_param(&mut line, "PARTSTAT", table.get("status"), true);
                     line.push(':');
                     line.push_str(&ensure_mailto(value));
-                    lines.push(line);
+                    lines.push((originals.get(lines.len()), line));
                 }
             }
 
@@ -762,7 +780,7 @@ impl Field {
                 if let Some(table) = item.as_table_like()
                     && let Some(rule) = recur_rule(table)
                 {
-                    lines.push(format!("{}:{}", self.name, rule));
+                    lines.push((originals.first(), format!("{}:{}", self.name, rule)));
                 }
             }
 
@@ -770,47 +788,92 @@ impl Field {
                 if let Some(table) = item.as_table_like()
                     && let Some(value) = duration_value(table, *negative)
                 {
-                    lines.push(format!("{}:{}", self.name, value));
+                    lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
         }
 
         lines
-            .iter()
-            .enumerate()
-            .map(|(at, line)| match originals.get(at) {
-                Some(original) => Content(original).rewritten(line, self.params()),
-                None => line.clone(),
+            .into_iter()
+            .map(|(original, line)| match original {
+                Some(original) => Content(original).rewritten(&line, self.params()),
+                None => line,
             })
             .collect()
     }
 }
 
-/// Spread a list field's items over the lines they came from.
+/// Give a list field's items back to the lines they came from.
 ///
-/// Each original keeps as many items as it held and a surplus opens its own
-/// line, so two properties of one name (`CATEGORIES;LANGUAGE=en:a,b` beside
-/// `CATEGORIES;LANGUAGE=fr:c`) never collapse into one, which would drop the
-/// second line and the parameters the form never showed with it.
-fn spread<'i>(items: &'i [String], originals: &[String]) -> Vec<&'i [String]> {
-    if items.is_empty() {
-        return Vec::new();
+/// An item belongs to the line whose value held it, because a line's
+/// parameters describe the items that line carried. Counting them off the
+/// front of the array instead hands each line whatever has room, so removing
+/// one item relabels every item behind it: `CATEGORIES;LANGUAGE=fr:travail`
+/// becomes English and its own line disappears.
+///
+/// An item no line held fills the room a line lost, in document order, which
+/// is how renaming an item rewrites its own line. Whatever is left over shares
+/// one new line, and a line left with no items is dropped.
+fn spread<'i, 'o>(
+    items: &[&'i str],
+    originals: &'o [String],
+) -> Vec<(Option<&'o String>, Vec<&'i str>)> {
+    // NOTE: at most one line leaves nothing to disambiguate, so the items are
+    // that line, in the order the document wrote them. Spreading them by
+    // ownership instead would write a second line for an added item, which
+    // the README's own example says does not happen.
+    if originals.len() < 2 {
+        return match items.is_empty() {
+            true => Vec::new(),
+            false => vec![(originals.first(), items.to_vec())],
+        };
     }
 
-    let mut out = Vec::new();
-    let mut rest = items;
+    let held: Vec<Vec<String>> = originals.iter().map(|line| Content(line).texts()).collect();
+    let mut free: Vec<Vec<bool>> = held.iter().map(|texts| vec![true; texts.len()]).collect();
+    let mut owners: Vec<Option<usize>> = Vec::with_capacity(items.len());
 
-    for original in originals {
-        if rest.is_empty() {
+    for item in items.iter().copied() {
+        let mut owner = None;
+
+        for (at, texts) in held.iter().enumerate() {
+            let Some(slot) = (0..texts.len()).find(|slot| free[at][*slot] && texts[*slot] == item)
+            else {
+                continue;
+            };
+
+            free[at][slot] = false;
+            owner = Some(at);
             break;
         }
 
-        let held = Content(original).texts().len().clamp(1, rest.len());
-        let (head, tail) = rest.split_at(held);
-        out.push(head);
-        rest = tail;
+        owners.push(owner);
     }
 
-    out.extend(rest.iter().map(slice::from_ref));
-    out
+    let mut room: Vec<usize> = free
+        .iter()
+        .map(|slots| slots.iter().filter(|free| **free).count())
+        .collect();
+    let mut kept: Vec<Vec<&str>> = held.iter().map(|_| Vec::new()).collect();
+    let mut opened = Vec::new();
+
+    for (item, owner) in items.iter().copied().zip(owners) {
+        match owner.or_else(|| room.iter().position(|room| *room > 0)) {
+            Some(at) => {
+                room[at] -= usize::from(owner.is_none());
+                kept[at].push(item);
+            }
+            // NOTE: one line for the lot rather than one line each. Which
+            // line's parameters they should have carried is the question
+            // several lines make unanswerable, so they carry none, together.
+            None => opened.push(item),
+        }
+    }
+
+    kept.into_iter()
+        .zip(originals)
+        .filter(|(items, _)| !items.is_empty())
+        .map(|(items, original)| (Some(original), items))
+        .chain((!opened.is_empty()).then_some((None, opened)))
+        .collect()
 }
