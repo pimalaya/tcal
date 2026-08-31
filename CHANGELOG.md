@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Added `apply <TEMPLATE> [SOURCE]`, which folds an edited TOML document back onto the calendar it was projected from, with no editor in the middle.
+
+  `template` went one way and only `edit` came back, so a form edited by anything other than tCal's own editor, a script, a filter, a graphical app, could not be folded back at all. `tcal apply form.toml event.ics` closes the round trip, `-` reads the document from stdin, and the type flags are the ones the form was projected with. A document that does not parse, or that leaves a merge collision undecided, is an error here rather than a question. It writes the source file back in place, as `edit` does, `--output` sending the result elsewhere.
+
 - Added `--editor <COMMAND>` to `edit` and `merge`, naming the editor for one run, ahead of `$VISUAL` and `$EDITOR`.
 
   It is spawned on the path of a temporary TOML file it edits in place, so it must block until the edit is done: use `--editor "code --wait"`, not `--editor code`.

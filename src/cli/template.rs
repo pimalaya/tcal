@@ -1,7 +1,8 @@
 //! # Template command
 //!
 //! Printing the TOML form of a calendar, blank or prefilled. It always emits
-//! TOML and never an iCalendar, the way back being the edit verb.
+//! TOML and never an iCalendar, the way back being the apply verb, or the edit
+//! verb when a person is in the middle of it.
 
 use std::path::PathBuf;
 

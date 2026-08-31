@@ -52,7 +52,7 @@ END:VEVENT
 END:VCALENDAR
 ```
 
-This repository ships two interfaces: a Rust library projecting an iCalendar to TOML and back, and a CLI editing that projection in `$EDITOR`.
+This repository ships two interfaces: a Rust library projecting an iCalendar to TOML and back, and a CLI editing that projection in `$EDITOR`, or folding an already edited one back with `apply`.
 
 ## Table of contents
 
@@ -166,6 +166,8 @@ tcal edit event.ics                        # edit in $EDITOR, written back in pl
 tcal edit - < event.ics > updated.ics      # edit a stream
 tcal edit --output meeting.ics             # start a new event from scratch
 tcal edit --editor "code --wait" event.ics # name the editor for one run
+tcal apply form.toml event.ics             # fold an edited form back, no editor
+tcal template event.ics | edit-somehow | tcal apply - event.ics
 tcal merge base.ics local.ics remote.ics --output merged.ics
 ```
 
