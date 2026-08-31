@@ -157,3 +157,13 @@ The header is prose a person reads before anything else, and a line running past
 - GIVEN a note whose text passes the wrapping column
 - WHEN the document is projected
 - THEN it is written over two comment lines, the second indented under the first line's text
+
+### Requirement: A conflict is read left before right
+Where a merge conflict is read, the left side SHALL be taken before the right one, matching the order the report names them in.
+
+The left side is the local calendar, whose bytes the merged calendar is built from and whose value a collision keeps. Reading it first is the order everything else in the merge already states, and taking the remote action first only ever reflected a field order the library has since corrected.
+
+#### Scenario: Reading one conflict
+- GIVEN a conflict the merge reported
+- WHEN it is read against the four calendars
+- THEN its left side is taken first, and the reading is the same note or choice either way

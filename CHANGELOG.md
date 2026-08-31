@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Read a merge conflict left before right, following the `IcalMergeConflict` rename in ical-rs.
+
+  The library renamed the field carrying the left side's action from `reason` to `left` and made it the first of the pair, so a conflict reads `{ left, right }` as vcard-rs's twin does. `Sides::read` takes the two in that order. The reading is unchanged: the same conflicts become the same header notes and the same contested keys. This raises the ical-rs requirement to 0.5.
+
 ### Added
 
 - Added a `merge` verb, and the `merge` module behind it: a three-way merge projected as a TOML document to decide.

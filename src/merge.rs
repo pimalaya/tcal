@@ -107,7 +107,7 @@ impl TcalMerge<'_> {
         let mut choices = Vec::new();
 
         for conflict in &report.conflicts {
-            match sides.read(&conflict.right, &conflict.reason) {
+            match sides.read(&conflict.left, &conflict.right) {
                 Reading::Note(note) => notes.push(note),
                 Reading::Choice(choice) => choices.push(choice),
             }

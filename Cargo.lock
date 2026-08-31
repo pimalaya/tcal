@@ -504,9 +504,9 @@ dependencies = [
 
 [[package]]
 name = "ical-rs"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d69acb636ebfdd3c21e0f829bdc2ce145bd8b5221b58ceeee77b4d347c9cc65"
+checksum = "d4b5f716aef1e2991c325d70daf7810d16c46662a24f438b239750c2aefc0068"
 dependencies = [
  "memchr",
 ]

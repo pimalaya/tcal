@@ -22,7 +22,7 @@ cargo build                                # the library alone, no_std over allo
 cargo build --features cli                 # the library and the binary above it
 ```
 
-The manifest patches ical-rs to a working copy beside this one, ical-rs not being released yet and the projection tracking that syntax tree too closely to sit on a release anyway. Point the patch elsewhere when your checkout is:
+tCal depends on the released ical-rs. To build against a local checkout, pass it on the command line rather than editing Cargo.toml:
 
 ```sh
 cargo test --all-features --config 'patch.crates-io.ical-rs.path="../ical"'

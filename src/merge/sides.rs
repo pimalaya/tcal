@@ -49,18 +49,19 @@ impl Sides<'_> {
     /// What one conflict becomes in the document.
     ///
     /// A choice where both sides wrote a value and only a reader can pick, a
-    /// comment where the merge already decided. The conflict names the right
-    /// side's action, the remote one, and the reason carries the left side's.
-    pub fn read(&self, remote: &IcalMergeAction<'_>, reason: &IcalMergeReason<'_>) -> Reading {
-        match reason {
+    /// comment where the merge already decided. A conflict names its two sides
+    /// left and right, which here are the local and the remote calendar, and
+    /// the left one carries with it why the right one did not simply apply.
+    pub fn read(&self, left: &IcalMergeReason<'_>, right: &IcalMergeAction<'_>) -> Reading {
+        match left {
             IcalMergeReason::Recurrence(local) => Reading::Note(format!(
                 "{} changed on local and {} on remote: one is a series and the other one of its instances, and both were kept, so the rule may have moved the ground the instance stood on.",
                 self.name(local),
-                self.name(remote)
+                self.name(right)
             )),
 
-            IcalMergeReason::Divergent(local) if is_removal(local) || is_removal(remote) => {
-                Reading::Note(self.dropped(local, remote))
+            IcalMergeReason::Divergent(local) if is_removal(local) || is_removal(right) => {
+                Reading::Note(self.dropped(local, right))
             }
 
             IcalMergeReason::Divergent(local) => match self.choice(local) {
