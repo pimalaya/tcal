@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = []
-cli = ["dep:anyhow", "dep:chrono", "dep:clap", "dep:edit", "dep:pimalaya-cli", "dep:uuid"]
+cli = ["dep:anyhow", "dep:chrono", "dep:clap", "dep:pimalaya-cli", "dep:uuid"]
 
 [profile.release]
 lto = "fat"
@@ -45,7 +45,6 @@ proptest = "1"
 anyhow = { version = "1", optional = true }
 chrono = { version = "0.4", optional = true }
 clap = { version = "4.4", features = ["derive", "env", "wrap_help"], optional = true }
-edit = { version = "0.1", optional = true }
 ical-rs = { version = "0.5", default-features = false, features = ["parser"] }
 log = { version = "0.4", default-features = false }
 pimalaya-cli = { version = "0.2", default-features = false, features = ["prompt", "terminal"], optional = true }

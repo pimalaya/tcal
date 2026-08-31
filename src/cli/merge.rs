@@ -14,7 +14,10 @@ use log::info;
 use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
-    cli::{args::Output, editor::Editor},
+    cli::{
+        args::{EditorArg, Output},
+        editor::Editor,
+    },
     merge::TcalMerge,
 };
 
@@ -37,6 +40,9 @@ pub struct MergeCommand {
     /// Write the merged calendar here, once the document is decided.
     #[arg(short, long, value_name = "PATH", value_parser = path_parser)]
     pub output: PathBuf,
+    /// The editor the document is decided in.
+    #[command(flatten)]
+    pub editor: EditorArg,
 }
 
 impl MergeCommand {
@@ -58,6 +64,7 @@ impl MergeCommand {
 
         let editor = Editor {
             document: &merged.toml,
+            command: self.editor.editor.as_deref(),
         };
         let out = editor.apply(printer, |edited| merged.apply(edited))?;
 

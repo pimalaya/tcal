@@ -11,7 +11,7 @@ use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
     cli::{
-        args::{ComponentFlags, Output, SourceArg},
+        args::{ComponentFlags, EditorArg, Output, SourceArg},
         editor::Editor,
     },
     template::TcalTemplate,
@@ -31,6 +31,9 @@ pub struct EditCommand {
     /// The component types the form shows, and the only ones it reconciles.
     #[command(flatten)]
     pub components: ComponentFlags,
+    /// The editor the form is opened in.
+    #[command(flatten)]
+    pub editor: EditorArg,
     /// Write the resulting iCalendar here instead of stdout.
     ///
     /// Editing a file writes it back in place, so this is what redirects the
@@ -48,6 +51,7 @@ impl EditCommand {
         let projected = template.project();
         let editor = Editor {
             document: &projected,
+            command: self.editor.editor.as_deref(),
         };
 
         let out = editor.apply(printer, |edited| template.apply(edited))?;

@@ -165,12 +165,13 @@ tcal template --event --todo event.ics     # only events and to-dos, as blocks
 tcal edit event.ics                        # edit in $EDITOR, written back in place
 tcal edit - < event.ics > updated.ics      # edit a stream
 tcal edit --output meeting.ics             # start a new event from scratch
+tcal edit --editor "code --wait" event.ics # name the editor for one run
 tcal merge base.ics local.ics remote.ics --output merged.ics
 ```
 
 A type flag narrows the form and nothing else: a type it does not show is left exactly as it was when the result is written back.
 
-The editor is the one [edit](https://crates.io/crates/edit) resolves, `$VISUAL` first, then `$EDITOR`, then an OS default. tCal exposes no override, so set them in your shell rc file.
+The editor is the one `--editor` names, then `$VISUAL`, then `$EDITOR`, and nothing after those: tCal picks none of its own, and says so when neither variable is set. It reads no configuration file, so set them in your shell rc file. The command is spawned on the path of a temporary TOML file it edits in place, so it must block until the edit is done: use `code --wait`, not `code`.
 
 A property `tcal merge` could not settle comes back written once per side, under the same TOML key:
 
