@@ -1,4 +1,4 @@
-# tCal [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
+# tCal [![Documentation](https://img.shields.io/docsrs/tcal?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/tcal/latest/tcal) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya) [![Sponsor](https://img.shields.io/badge/sponsor-pink?style=flat&logo=github-sponsors&logoColor=white)](https://pimalaya.org/sponsor/)
 
 Edit and merge [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML
 
@@ -89,10 +89,6 @@ This repository ships two interfaces: a Rust library projecting an iCalendar to 
 
 ### Pre-built binary
 
-tcal has no tagged release yet, so a binary comes from the [releases](https://github.com/pimalaya/tcal/actions/workflows/releases.yml) workflow: pick the latest run and grab the artifact matching your OS. These are built from `master`.
-
-Once a release is tagged, the install script takes the binary from the [releases](https://github.com/pimalaya/tcal/releases) section instead.
-
 As root:
 
 ```sh
@@ -105,6 +101,10 @@ As a regular user:
 curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | PREFIX=~/.local sh
 ```
 
+These commands install the latest binary from the GitHub [releases](https://github.com/pimalaya/tcal/releases) section.
+
+For a more up-to-date version, check the [releases](https://github.com/pimalaya/tcal/actions/workflows/releases.yml) workflow and look for the *Artifacts* section: those are built from `master`, with the default cargo features.
+
 > [!NOTE]
 > Pre-built binaries carry the `cli` feature and nothing else. If you need a different feature set, use another installation method.
 
@@ -113,10 +113,14 @@ curl -sSL https://raw.githubusercontent.com/pimalaya/tcal/master/install.sh | PR
 The binary lives behind the `cli` feature, which is off by default so that a library consumer pays for none of it:
 
 ```sh
-cargo install --locked --features cli --git https://github.com/pimalaya/tcal.git
+cargo install --locked --features cli tcal
 ```
 
-tcal is not on [crates.io](https://crates.io) yet, so the git repository is the only source, for the binary and for a `tcal` dependency alike.
+The library alone is a `tcal` dependency, which pulls in none of that:
+
+```sh
+cargo add tcal
+```
 
 ### Nix
 
