@@ -3,6 +3,8 @@
 //! Each [`Spec`]'s [`Field`]s, and how every [`Kind`] of value projects to and
 //! parses from TOML.
 
+use core::slice;
+
 use alloc::{
     borrow::ToOwned,
     format,
@@ -628,7 +630,9 @@ impl Field {
 
             Kind::Duration { .. } => duration_lines(entries.first().copied(), self.key, self.hint),
 
-            Kind::Attendee => unreachable!("attendee is rendered with its parent prefix"),
+            // NOTE: an attendee has no line of its own. Its keys are written
+            // by attendee_keys, under the header its parent component writes.
+            Kind::Attendee => Vec::new(),
         }
     }
 
@@ -703,8 +707,8 @@ impl Field {
                         .map(escape)
                         .collect();
 
-                    if !parts.is_empty() {
-                        lines.push(format!("{}:{}", self.name, parts.join(&sep.to_string())));
+                    for items in spread(&parts, originals) {
+                        lines.push(format!("{}:{}", self.name, items.join(&sep.to_string())));
                     }
                 }
             }
@@ -780,4 +784,33 @@ impl Field {
             })
             .collect()
     }
+}
+
+/// Spread a list field's items over the lines they came from.
+///
+/// Each original keeps as many items as it held and a surplus opens its own
+/// line, so two properties of one name (`CATEGORIES;LANGUAGE=en:a,b` beside
+/// `CATEGORIES;LANGUAGE=fr:c`) never collapse into one, which would drop the
+/// second line and the parameters the form never showed with it.
+fn spread<'i>(items: &'i [String], originals: &[String]) -> Vec<&'i [String]> {
+    if items.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut rest = items;
+
+    for original in originals {
+        if rest.is_empty() {
+            break;
+        }
+
+        let held = Content(original).texts().len().clamp(1, rest.len());
+        let (head, tail) = rest.split_at(held);
+        out.push(head);
+        rest = tail;
+    }
+
+    out.extend(rest.iter().map(slice::from_ref));
+    out
 }

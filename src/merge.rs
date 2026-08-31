@@ -108,7 +108,7 @@ impl TcalMerge<'_> {
 
         for conflict in &report.conflicts {
             match sides.read(&conflict.left, &conflict.right) {
-                Reading::Note(note) => notes.push(note),
+                Reading::Note(note) => push_note(&mut notes, note),
                 Reading::Choice(choice) => choices.push(choice),
             }
         }
@@ -168,6 +168,16 @@ fn read<'a>(text: &'a str, side: &'static str) -> TcalResult<IcalCst<'a>> {
         side,
         message: err.to_string(),
     })
+}
+
+/// Append a note, unless the same one was said already.
+///
+/// One property can collide more than once, and a reader told the same thing
+/// twice looks for the second thing it is being told.
+pub(crate) fn push_note(notes: &mut Vec<String>, note: String) {
+    if !notes.contains(&note) {
+        notes.push(note);
+    }
 }
 
 /// The list an action edited, for the two actions that edit one.

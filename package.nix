@@ -59,7 +59,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     '';
 
   meta = {
-    description = "CLI to edit iCalendars as ergonomic TOML";
+    description = "Edit and merge iCalendars as ergonomic TOML";
     mainProgram = finalAttrs.pname;
     homepage = "https://github.com/pimalaya/${finalAttrs.pname}";
     changelog = "https://github.com/pimalaya/${finalAttrs.pname}/releases/${finalAttrs.src.tag}";

@@ -260,6 +260,31 @@ fn every_fixture_settles_after_one_round_trip() {
     }
 }
 
+/// Two properties of one repeatable name keep their own lines.
+///
+/// The form shows their items as one array, so a fold-back has to spread it
+/// back over the lines it came from: collapsing them into one would drop the
+/// second line and the parameters the form never showed with it.
+#[test]
+fn repeated_list_properties_of_one_name_do_not_collapse() {
+    let src = calendar(&[
+        "CATEGORIES;LANGUAGE=en:a,b".to_owned(),
+        "CATEGORIES;LANGUAGE=fr:c".to_owned(),
+    ]);
+
+    let once = round_trip(&src);
+
+    assert_eq!(
+        once.lines()
+            .filter(|line| line.starts_with("CATEGORIES"))
+            .count(),
+        2,
+        "{once}",
+    );
+    assert_eq!(once, src);
+    assert_eq!(round_trip(&once), once);
+}
+
 /// A modelled property keeps the parameters the projection does not show.
 ///
 /// An unmodelled property keeps everything the same way.

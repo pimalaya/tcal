@@ -60,9 +60,9 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     #[command(visible_alias = "tpl")]
-    TcalTemplate(TemplateCommand),
+    Template(TemplateCommand),
     Edit(EditCommand),
-    TcalMerge(MergeCommand),
+    Merge(MergeCommand),
     #[command(alias = "completions")]
     Completion(CompletionCommand),
     #[command(alias = "manuals")]
@@ -73,11 +73,38 @@ impl Command {
     /// Run the parsed subcommand.
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         match self {
-            Self::TcalTemplate(cmd) => cmd.execute(printer),
+            Self::Template(cmd) => cmd.execute(printer),
             Self::Edit(cmd) => cmd.execute(printer),
-            Self::TcalMerge(cmd) => cmd.execute(printer),
+            Self::Merge(cmd) => cmd.execute(printer),
             Self::Completion(cmd) => cmd.execute(printer, Cli::command()),
             Self::Manual(cmd) => cmd.execute(printer, Cli::command()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{borrow::ToOwned, string::String, vec::Vec};
+
+    use clap::CommandFactory;
+
+    use crate::cli::Cli;
+
+    /// The verbs are spelled the way every document spells them.
+    ///
+    /// clap derives a subcommand's name from its variant, so a variant
+    /// carrying the library's `Tcal` prefix would offer `tcal-template` and
+    /// `tcal-merge`, which is neither what the README documents nor what
+    /// `infer_subcommands` would reach from `template`.
+    #[test]
+    fn a_verb_is_named_after_itself() {
+        let names: Vec<String> = Cli::command()
+            .get_subcommands()
+            .map(|cmd| cmd.get_name().to_owned())
+            .collect();
+
+        for verb in ["template", "edit", "merge"] {
+            assert!(names.contains(&verb.to_owned()), "{names:?}");
         }
     }
 }

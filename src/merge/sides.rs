@@ -23,7 +23,7 @@ use ical::tree::{
 
 use crate::{
     ical::{TcalCalendar, TcalComponent, TcalProp},
-    merge::{choice::Choice, edited_items, is_removal, path_of, prop_of},
+    merge::{choice::Choice, edited_items, is_removal, path_of, prop_of, push_note},
     template::{
         attendee_keys, child_components, entries_for,
         model::{Field, Kind, Spec, TOP_LEVEL},
@@ -144,9 +144,7 @@ impl Sides<'_> {
                 self.name(action)
             );
 
-            if !notes.contains(&note) {
-                notes.push(note);
-            }
+            push_note(notes, note);
         }
     }
 

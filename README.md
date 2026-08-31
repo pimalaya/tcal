@@ -3,7 +3,7 @@
 Edit and merge [iCalendars](https://www.rfc-editor.org/rfc/rfc5545) as ergonomic TOML
 
 ```sh
-$ tcal edit --event
+tcal edit --event
 ```
 
 ```toml
@@ -180,6 +180,14 @@ summary = "Team standup" # remote
 TOML forbids duplicate keys, so an undecided document does not parse and nothing is written. Delete the line you do not want, or replace them all with a value of your own.
 
 What the merge settled on its own is said in a comment at the head of the document instead, since offering a decided thing as a choice asks you to undo what you cannot see the reasons for.
+
+Logs go to stderr, so they can be redirected to a file while the command output stays on stdout:
+
+```sh
+tcal template event.ics --log-level debug 2>/tmp/tcal.log
+```
+
+Use `--log-file <PATH>` to append them to a file directly. When `--log-level` is omitted the `RUST_LOG` environment variable is consulted, and `RUST_BACKTRACE=1` adds the full error backtrace.
 
 ## License
 
