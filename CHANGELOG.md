@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-01
+
 ### Added
 
 - Added `apply <TEMPLATE> [SOURCE]`, which folds an edited TOML document back onto the calendar it was projected from, with no editor in the middle.
@@ -70,5 +72,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Added the golden fixture database under tests/data: real and crafted calendars asserting the projection and, where the source is already in the form the projection writes back, a byte-exact round trip.
 
-[unreleased]: https://github.com/pimalaya/tcal/compare/v0.1.0..HEAD
+[unreleased]: https://github.com/pimalaya/tcal/compare/v0.2.0..HEAD
+[0.2.0]: https://github.com/pimalaya/tcal/compare/v0.1.0..v0.2.0
 [0.1.0]: https://github.com/pimalaya/tcal/compare/root..v0.1.0
