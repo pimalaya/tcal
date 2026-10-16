@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a date typed as a string with a `T` between date and time, the shape the template hints show (`"2026-10-20T10:30:00"`), being written verbatim into an invalid property; a trailing `Z` now reads as UTC too.
+
 ## [0.2.0] - 2026-09-01
 
 ### Added
