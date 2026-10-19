@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- A date typed as a string tCal cannot read (`"martes 10:00"`) is now refused, naming the key (`edit` offers to re-edit it), instead of being written verbatim into a property no iCalendar reader accepts. A value the calendar itself wrote in a form tCal does not read still round-trips untouched.
+- A date typed as a string tCal cannot read (`"martes 10:00"`) is now refused, naming the key (`edit` offers to re-edit it), instead of being written verbatim into a property no iCalendar reader accepts. A date pasted in iCalendar form (`"20260613T140000Z"`) is still accepted, and a value the calendar itself wrote in a form tCal does not read still round-trips untouched.
 
 ### Fixed
 

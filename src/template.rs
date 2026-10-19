@@ -781,6 +781,13 @@ mod tests {
     }
 
     #[test]
+    fn apply_reads_a_date_typed_in_icalendar_form() {
+        let out = apply(SAMPLE, "[[event]]\ndate-start = \"20260613T140000Z\"\n").unwrap();
+
+        assert!(out.contains("DTSTART:20260613T140000Z\r\n"));
+    }
+
+    #[test]
     fn apply_keeps_a_date_the_calendar_wrote_in_its_own_form() {
         let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
             DTSTART:20260613T1400\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
