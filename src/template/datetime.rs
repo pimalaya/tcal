@@ -155,10 +155,20 @@ pub fn parse_friendly_date(value: &str) -> Option<(String, Option<String>, bool)
         None => (value, false),
     };
 
-    let mut parts = rest.split_whitespace();
-    let date = parts.next()?;
-    let time = parts.next();
-    if parts.next().is_some() {
+    // NOTE: the date and the time split on a space or on the `T` the
+    // template hints show (RFC 3339 5.6), and a time ending in `Z` is UTC
+    // as the ` UTC` suffix is.
+    let (date, time, utc) = match rest.split_once(|c: char| c == 'T' || c.is_whitespace()) {
+        Some((date, time)) => {
+            let time = time.trim();
+            match time.strip_suffix('Z') {
+                Some(time) => (date, Some(time), true),
+                None => (date, Some(time), utc),
+            }
+        }
+        None => (rest, None, utc),
+    };
+    if time.is_some_and(|time| time.is_empty() || time.contains(char::is_whitespace)) {
         return None;
     }
 
@@ -200,5 +210,53 @@ pub fn friendly_to_ical(value: &str) -> String {
         Some((date, Some(time), true)) => format!("{date}T{time}Z"),
         Some((date, Some(time), false)) => format!("{date}T{time}"),
         None => value.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_space_separates_the_date_from_the_time() {
+        assert_eq!(
+            date_line("DTEND", "2026-10-20 10:30", Some("Europe/Madrid")),
+            "DTEND;TZID=Europe/Madrid:20261020T103000"
+        );
+    }
+
+    /// The template hints show `2026-06-13T14:30:00`, so a value typed
+    /// that way between the quotes must not land verbatim.
+    #[test]
+    fn a_t_separates_the_date_from_the_time() {
+        assert_eq!(
+            date_line("DTEND", "2026-10-20T10:30:00", Some("Europe/Madrid")),
+            "DTEND;TZID=Europe/Madrid:20261020T103000"
+        );
+    }
+
+    #[test]
+    fn a_trailing_z_is_utc() {
+        assert_eq!(
+            date_line("DTSTART", "2026-10-20T08:30:00Z", None),
+            "DTSTART:20261020T083000Z"
+        );
+    }
+
+    #[test]
+    fn a_lone_date_is_a_whole_day() {
+        assert_eq!(
+            date_line("DTSTART", "2026-10-20", None),
+            "DTSTART;VALUE=DATE:20261020"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_value_still_passes_verbatim() {
+        assert_eq!(
+            date_line("DTSTART", "20261020T103000", None),
+            "DTSTART:20261020T103000"
+        );
+        assert_eq!(parse_friendly_date("2026-10-20 10:30 extra"), None);
     }
 }
