@@ -26,6 +26,17 @@ pub enum TcalError {
     /// It is written as one key per side, which TOML refuses as a duplicate
     /// key, so an undecided document cannot be applied.
     Undecided(String),
+    /// A date field holds a string that reads as no date.
+    ///
+    /// Written verbatim, it would make a property no iCalendar reader
+    /// accepts. A value the calendar itself wrote is not refused: it is kept
+    /// as it was, so only one typed in the document lands here.
+    UnreadableDate {
+        /// The TOML key of the date field.
+        key: &'static str,
+        /// The string it holds.
+        value: String,
+    },
     /// The edited TOML buffer is not valid TOML.
     ParseToml(toml_edit::TomlError),
     /// A requested component type key names no modelled component type.
@@ -44,6 +55,10 @@ impl fmt::Display for TcalError {
             Self::Undecided(key) => {
                 write!(f, "Property {key} is left undecided: ")?;
                 write!(f, "keep one of its lines and delete the others")
+            }
+            Self::UnreadableDate { key, value } => {
+                write!(f, "Cannot read {value:?} as a date for {key}; ")?;
+                write!(f, "expected a date-time like 2026-06-13T14:30:00")
             }
             Self::ParseToml(_) => {
                 write!(f, "Cannot parse TOML buffer")

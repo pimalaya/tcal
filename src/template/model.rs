@@ -15,9 +15,10 @@ use ical::tree::line::IcalLine;
 use toml_edit::TableLike;
 
 use crate::{
+    error::{TcalError, TcalResult},
     ical::TcalProp,
     template::{
-        datetime::{DATE_HINT, date_line, is_utc, toml_date, toml_date_line},
+        datetime::{DATE_HINT, date_line, is_utc, parse_friendly_date, toml_date, toml_date_line},
         duration::{duration_lines, duration_value},
         line::Line,
         patch::{Content, ensure_mailto, escape, strip_mailto},
@@ -658,6 +659,40 @@ impl Field {
             Kind::Attendee { .. } => &["CN", "ROLE", "PARTSTAT"],
             Kind::Date => &["TZID", "VALUE"],
             _ => &[],
+        }
+    }
+
+    /// Refuse a date typed in a form nothing reads.
+    ///
+    /// A string that is neither the friendly form nor the value one of
+    /// `originals` already carries would be written verbatim into a property
+    /// no iCalendar reader accepts. The calendar's own value is let through,
+    /// so a form the model cannot read still round-trips.
+    pub(crate) fn check(&self, source: &dyn TableLike, originals: &[String]) -> TcalResult<()> {
+        if !matches!(self.kind, Kind::Date) {
+            return Ok(());
+        }
+
+        let Some(value) = source
+            .get(self.key)
+            .and_then(|item| item.as_str())
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(());
+        };
+
+        let readable = parse_friendly_date(value).is_some();
+        let kept = originals
+            .iter()
+            .any(|original| Content(original).text() == value);
+
+        if readable || kept {
+            Ok(())
+        } else {
+            Err(TcalError::UnreadableDate {
+                key: self.key,
+                value: value.to_owned(),
+            })
         }
     }
 
