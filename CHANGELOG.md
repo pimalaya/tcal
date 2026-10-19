@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- A date typed as a string tCal cannot read (`"martes 10:00"`) is now refused, naming the key (`edit` offers to re-edit it), instead of being written verbatim into a property no iCalendar reader accepts. A value the calendar itself wrote in a form tCal does not read still round-trips untouched.
+
 ### Fixed
 
 - Fixed a date typed as a string with a `T` between date and time, the shape the template hints show (`"2026-10-20T10:30:00"`), being written verbatim into an invalid property; a trailing `Z` now reads as UTC too.

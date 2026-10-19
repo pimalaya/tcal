@@ -76,7 +76,7 @@ It SHALL write the source file back in place as `edit` does, `--output` sending 
 A document that does not parse, and one leaving a collision undecided, SHALL fail naming what could not be folded, rather than offer a re-edit. `edit` asks because a person is sitting in front of it; `apply` has nobody to ask, and a prompt in a pipeline is a hang.
 
 ### Requirement: A date typed as its hint is read
-A date field given as a string SHALL be read when its date and time are separated by a space or by `T`, and a time ending in `Z` or followed by ` UTC` SHALL read as UTC. A string in neither form SHALL pass through verbatim.
+A date field given as a string SHALL be read when its date and time are separated by a space or by `T`, and a time ending in `Z` or followed by ` UTC` SHALL read as UTC. A string in neither form SHALL be refused unless it is the value the calendar already carries (see *A typed date nothing reads is refused*).
 
 The blank template offers a date as an empty string beside a hint written with `T`, so filling the quotes the way the hint shows is the first thing a reader does; writing that value verbatim produces a property no iCalendar reader accepts, and nothing says so before the calendar server does.
 
@@ -84,3 +84,18 @@ The blank template offers a date as an empty string beside a hint written with `
 - GIVEN a blank event template whose `date-end` is set to `"2026-10-20T10:30:00"` and `date-end-tz` to `"Europe/Madrid"`
 - WHEN it is folded back
 - THEN the event carries `DTEND;TZID=Europe/Madrid:20261020T103000`
+
+### Requirement: A typed date nothing reads is refused
+A date field given as a string that is neither in the friendly form nor the value the calendar already carries for that property SHALL fail the fold back, naming the key and the value. The calendar's own value SHALL still pass through verbatim.
+
+Written verbatim, such a string makes a property no iCalendar reader accepts, and the calendar server is the first to say so. The calendar's own value is the exception because the projection shows a form it cannot read as the string the calendar wrote, so that it round-trips whole.
+
+#### Scenario: A date typed in words
+- GIVEN an event template whose `date-start` is set to `"next tuesday"`
+- WHEN it is folded back
+- THEN it fails naming `date-start` and `"next tuesday"`
+
+#### Scenario: The calendar's own unreadable value
+- GIVEN an event whose `DTSTART` is `20260613T1400`, projected as `date-start = "20260613T1400"`
+- WHEN the projection is folded back unchanged
+- THEN the event comes out byte for byte as it went in
