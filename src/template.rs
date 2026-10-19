@@ -113,9 +113,9 @@ impl<'a> TcalTemplate<'a> {
         // beside it in the stream, a bare component with no calendar around it.
         match calendar.0.first() {
             Some(root) if root.named("VCALENDAR") => {
-                reconcile(&mut calendar.0[0], &doc, blocky, &self.types, escaper)
+                reconcile(&mut calendar.0[0], &doc, blocky, &self.types, escaper)?
             }
-            _ => reconcile(&mut calendar, &doc, blocky, &self.types, escaper),
+            _ => reconcile(&mut calendar, &doc, blocky, &self.types, escaper)?,
         }
 
         Ok(calendar.to_string())
@@ -191,15 +191,15 @@ fn reconcile<'a, C: TcalContainer<'a>>(
     blocky: bool,
     filter: &[&Spec],
     escaper: Escaper,
-) {
+) -> TcalResult<()> {
     if !blocky {
         let spec = filter.first().copied().unwrap_or(&VEVENT);
         let count = usize::from(block_has_content(doc.as_table(), spec));
         container.set_child_count(spec.name, count);
         if let Some(component) = container.children_mut(spec.name).next() {
-            apply_component(component, doc.as_table(), spec, escaper);
+            apply_component(component, doc.as_table(), spec, escaper)?;
         }
-        return;
+        return Ok(());
     }
 
     let specs: Vec<&Spec> = if filter.is_empty() {
@@ -219,9 +219,11 @@ fn reconcile<'a, C: TcalContainer<'a>>(
 
         container.set_child_count(spec.name, blocks.len());
         for (component, table) in container.children_mut(spec.name).zip(blocks) {
-            apply_component(component, table, spec, escaper);
+            apply_component(component, table, spec, escaper)?;
         }
     }
+
+    Ok(())
 }
 
 /// Rewrite one component's fields and children from its TOML table.
@@ -233,10 +235,11 @@ fn apply_component<'a>(
     table: &dyn TableLike,
     spec: &Spec,
     escaper: Escaper,
-) {
+) -> TcalResult<()> {
     for field in spec.fields {
         let originals = component.lines(field.name);
 
+        field.check(table, &originals)?;
         component.set_lines(field.name, &field.content_lines(table, &originals), escaper);
     }
 
@@ -251,9 +254,11 @@ fn apply_component<'a>(
 
         component.set_child_count(child.name, blocks.len());
         for (kid, kid_table) in component.children_mut(child.name).zip(blocks) {
-            apply_component(kid, kid_table, child, escaper);
+            apply_component(kid, kid_table, child, escaper)?;
         }
     }
+
+    Ok(())
 }
 
 /// The display group of an inline field, driving the blank line separators.
@@ -471,7 +476,10 @@ fn block_has_content(table: &dyn TableLike, spec: &Spec) -> bool {
 mod tests {
     use alloc::{borrow::ToOwned, string::String, vec::Vec};
 
-    use crate::{error::TcalResult, template::TcalTemplate};
+    use crate::{
+        error::{TcalError, TcalResult},
+        template::TcalTemplate,
+    };
 
     /// Project a calendar, every modelled type as a block.
     fn project(source: &str) -> String {
@@ -760,6 +768,42 @@ mod tests {
 
         let legacy = apply(SAMPLE, "[[event]]\ndate-start = \"2026-06-13 14:00 UTC\"\n").unwrap();
         assert!(legacy.contains("DTSTART:20260613T140000Z"));
+    }
+
+    #[test]
+    fn apply_refuses_a_typed_date_nothing_reads() {
+        let err = apply(SAMPLE, "[[event]]\ndate-start = \"next tuesday\"\n").unwrap_err();
+
+        assert!(matches!(
+            err,
+            TcalError::UnreadableDate { key: "date-start", ref value } if value == "next tuesday"
+        ));
+    }
+
+    #[test]
+    fn apply_reads_a_date_typed_in_icalendar_form() {
+        let out = apply(SAMPLE, "[[event]]\ndate-start = \"20260613T140000Z\"\n").unwrap();
+
+        assert!(out.contains("DTSTART:20260613T140000Z\r\n"));
+    }
+
+    #[test]
+    fn apply_keeps_a_date_the_calendar_wrote_in_its_own_form() {
+        let src = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n\
+            DTSTART:20260613T1400\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let toml = project(src);
+
+        assert!(toml.contains("date-start = \"20260613T1400\""));
+        assert_eq!(apply(src, &toml).unwrap(), src);
+
+        let edited = toml.replace("20260613T1400", "2026-06-13 at noon");
+        assert!(matches!(
+            apply(src, &edited).unwrap_err(),
+            TcalError::UnreadableDate {
+                key: "date-start",
+                ..
+            }
+        ));
     }
 
     #[test]
