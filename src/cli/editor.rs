@@ -92,6 +92,9 @@ impl Editor<'_> {
                 TcalError::Undecided(key) if !printer.is_json() => format!(
                     "Property {key} is left undecided.\n\nKeep one of its lines and delete the others. Re-edit to decide it?"
                 ),
+                TcalError::UnreadableDate { key, value } if !printer.is_json() => format!(
+                    "Cannot read {value:?} as a date for {key}.\n\nWrite it like 2026-06-13T14:30:00. Re-edit to fix it?"
+                ),
                 _ => return Err(keep(&path, err.into())),
             };
 
