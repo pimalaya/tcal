@@ -50,3 +50,6 @@ log = { version = "0.4", default-features = false }
 pimalaya-cli = { version = "0.2", default-features = false, features = ["prompt", "terminal"], optional = true }
 toml_edit = "0.25"
 uuid = { version = "1", features = ["v4"], optional = true }
+
+[patch.crates-io]
+pimalaya-cli = { git = "https://github.com/pimalaya/cli", rev = "55b66933950f02541892407667e5e0b254245871" }
