@@ -1,14 +1,14 @@
 //! # Shared arguments
 //!
-//! The source a verb reads its calendar from, the component types it shows,
-//! and the file it writes to.
+//! The source a verb reads its calendar from, the component types it shows and
+//! the editor it opens.
 
 use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
 
 use std::{
     fs,
-    io::{Read, Write, stdin, stdout},
-    path::{Path, PathBuf},
+    io::{Read, stdin},
+    path::PathBuf,
 };
 
 use anyhow::{Context, Result, bail};
@@ -144,25 +144,6 @@ impl ComponentFlags {
         .filter(|(on, _)| *on)
         .map(|(_, key)| key.to_owned())
         .collect()
-    }
-}
-
-/// Where a verb writes its result, stdout when it has no path.
-pub struct Output<'a>(pub Option<&'a Path>);
-
-impl Output<'_> {
-    /// Write the bytes out, creating or truncating a file target.
-    pub fn write(&self, bytes: &[u8]) -> Result<()> {
-        match self.0 {
-            Some(path) => {
-                info!("writing {} bytes to {path:?}", bytes.len());
-                fs::write(path, bytes).with_context(|| format!("Cannot write to {path:?}"))
-            }
-            None => {
-                info!("writing {} bytes to stdout", bytes.len());
-                stdout().write_all(bytes).context("Cannot write to stdout")
-            }
-        }
     }
 }
 

@@ -188,6 +188,8 @@ TOML forbids duplicate keys, so an undecided document does not parse and nothing
 
 What the merge settled on its own is said in a comment at the head of the document instead, since offering a decided thing as a choice asks you to undo what you cannot see the reasons for.
 
+In text, a document goes to stdout as itself, and one written to a file prints nothing. With `--json`, a command prints one object: `{"contents": ...}` for a document printed whole, `{"path": ..., "size": ...}` for one written to a file, or the failure object, whose `code` names what failed (`calendar-unreadable`, `template-unreadable`, `collision-undecided`, `date-unreadable`, `component-unknown`, `editor-missing`, `editor-failed`, `usage-invalid`). `tcal json-schema -d <DIR>` writes their JSON Schemas. A failure exits 1, a command line the parser refuses exits 2.
+
 Logs go to stderr, so they can be redirected to a file while the command output stays on stdout:
 
 ```sh

@@ -104,3 +104,11 @@ Written verbatim, such a string makes a property no iCalendar reader accepts, an
 - GIVEN an event whose `DTSTART` is `20260613T1400`, projected as `date-start = "20260613T1400"`
 - WHEN the projection is folded back unchanged
 - THEN the event comes out byte for byte as it went in
+
+### Requirement: An edited long line is folded
+A line the document moves SHALL be written anew by ical-rs, folded at 75 octets as RFC 5545 section 3.1 asks, never inside a UTF-8 sequence. A line the document leaves alone SHALL keep the layout it was written in.
+
+#### Scenario: An edited summary grows past 75 octets
+- GIVEN an event holding a short summary
+- WHEN the summary is edited to a value longer than a line holds
+- THEN the summary goes out folded, no physical line longer than 75 octets

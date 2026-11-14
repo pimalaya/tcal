@@ -11,7 +11,10 @@ use clap::Parser;
 use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
-    cli::args::{ComponentFlags, Output, SourceArg},
+    cli::{
+        args::{ComponentFlags, SourceArg},
+        output::DocumentOutput,
+    },
     template::TcalTemplate,
 };
 
@@ -31,12 +34,12 @@ pub struct TemplateCommand {
 
 impl TemplateCommand {
     /// Project the source and write the TOML out.
-    pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
+    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         let source = self.source.load()?;
         let toml = TcalTemplate::parse(&source)?
             .with_types(&self.components.selected())?
             .project();
 
-        Output(self.output.as_deref()).write(toml.as_bytes())
+        printer.out(DocumentOutput::write(self.output.as_deref(), toml)?)
     }
 }

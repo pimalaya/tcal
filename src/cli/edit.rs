@@ -11,8 +11,9 @@ use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
     cli::{
-        args::{ComponentFlags, EditorArg, Output, SourceArg},
+        args::{ComponentFlags, EditorArg, SourceArg},
         editor::Editor,
+        output::DocumentOutput,
     },
     template::TcalTemplate,
 };
@@ -57,6 +58,6 @@ impl EditCommand {
         let out = editor.apply(printer, |edited| template.apply(edited))?;
 
         let target = self.output.or_else(|| self.source.file_path());
-        Output(target.as_deref()).write(out.as_bytes())
+        printer.out(DocumentOutput::write(target.as_deref(), out)?)
     }
 }

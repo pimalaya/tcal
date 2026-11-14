@@ -6,10 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `json-schema`, which writes the JSON Schema of what each command prints, the failure object included.
+- Added a stable `code` to the failure object: `calendar-unreadable`, `template-unreadable`, `collision-undecided`, `date-unreadable`, `component-unknown`, `editor-missing`, `editor-failed`, and `usage-invalid` for a command line the parser refuses.
+
 ### Changed
 
+- **BREAKING**: Changed `--json` output to print the document as `{"contents": ...}`, or as the receipt `{"path": ..., "size": ...}` when it was written to a file, rather than the raw TOML or iCalendar.
+
+  In text, a document still prints as itself, and one written to a file prints nothing.
+
+- Changed a command line the parser refuses to print the failure object under `--json`, still exiting 2.
+- Changed an edited line longer than 75 octets to be folded, where it went out on one line (ical-rs 0.7).
+- Changed the help to print as written, no longer wrapped to the terminal width.
+- Changed the minimum supported Rust version to 1.89.
 - A date typed as a string tCal cannot read (`"martes 10:00"`) is now refused, naming the key (`edit` offers to re-edit it), instead of being written verbatim into a property no iCalendar reader accepts. A date pasted in iCalendar form (`"20260613T140000Z"`) is still accepted, and a value the calendar itself wrote in a form tCal does not read still round-trips untouched.
-- Changed piped `--json` output to print one value per line (pimalaya-cli `55b6693`).
+- Changed piped `--json` output to print one value per line.
 
 ### Fixed
 

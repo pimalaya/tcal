@@ -458,3 +458,20 @@ fn a_calendar_beside_the_one_being_read_survives() {
     assert!(out.contains("SUMMARY:Team lunch"), "{out}");
     assert!(out.ends_with(second), "{out}");
 }
+
+/// An edited line longer than 75 octets is folded, as RFC 5545 section 3.1
+/// asks.
+#[test]
+fn an_edited_long_line_is_folded() {
+    let src = calendar(&["SUMMARY:short".into()]);
+    let summary = "a summary long enough to cross the seventy-five octets a content line holds";
+    let edited = project(&src).replacen("\"short\"", &format!("\"{summary}\""), 1);
+    let out = template(&src).apply(&edited).unwrap();
+
+    assert!(out.lines().all(|line| line.len() <= 75), "{out}");
+    assert!(
+        out.replace("\r\n ", "")
+            .contains(&format!("SUMMARY:{summary}\r\n")),
+        "{out}"
+    );
+}

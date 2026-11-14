@@ -14,10 +14,7 @@ use log::info;
 use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
-    cli::{
-        args::{EditorArg, Output},
-        editor::Editor,
-    },
+    cli::{args::EditorArg, editor::Editor, output::DocumentOutput},
     merge::TcalMerge,
 };
 
@@ -68,7 +65,7 @@ impl MergeCommand {
         };
         let out = editor.apply(printer, |edited| merged.apply(edited))?;
 
-        Output(Some(&self.output)).write(out.as_bytes())
+        printer.out(DocumentOutput::write(Some(&self.output), out)?)
     }
 }
 

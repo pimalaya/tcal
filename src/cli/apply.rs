@@ -12,13 +12,16 @@ use std::{
     path::PathBuf,
 };
 
-use anyhow::{Context, Error, Result, bail};
-use clap::Parser;
+use anyhow::{Context, Error, Result};
+use clap::{Parser, error::ErrorKind};
 use log::info;
-use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
+use pimalaya_cli::{clap::parsers::path_parser, error::usage_error, printer::Printer};
 
 use crate::{
-    cli::args::{ComponentFlags, Output, SourceArg},
+    cli::{
+        args::{ComponentFlags, SourceArg},
+        output::DocumentOutput,
+    },
     template::TcalTemplate,
 };
 
@@ -54,9 +57,13 @@ pub struct ApplyCommand {
 
 impl ApplyCommand {
     /// Read the document, fold it onto the source, then write the calendar out.
-    pub fn execute(self, _printer: &mut impl Printer) -> Result<()> {
+    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         if self.template == "-" && self.source.source.as_deref() == Some("-") {
-            bail!("Only one of TEMPLATE and SOURCE can be read from stdin");
+            let message = "Only one of TEMPLATE and SOURCE can be read from stdin";
+            return Err(usage_error(&clap::Error::raw(
+                ErrorKind::ArgumentConflict,
+                message,
+            )));
         }
 
         let edited = self.read()?;
@@ -67,7 +74,7 @@ impl ApplyCommand {
 
         let target = self.output.or_else(|| self.source.file_path());
 
-        Output(target.as_deref()).write(out.as_bytes())
+        printer.out(DocumentOutput::write(target.as_deref(), out)?)
     }
 
     /// The edited document, from stdin or from the path it names.

@@ -124,8 +124,11 @@
 //! writes both into the projection.
 //!
 //! The `cli` feature adds the cli module, one module per verb over the shared
-//! arguments and the editor round trip. The binary above it is wiring only,
-//! and says so in its own header.
+//! arguments and the editor round trip. What a verb prints is data under the
+//! Pimalaya output contract: a document, or the receipt of the file it went
+//! to, and a failure coded from the [`error::TcalError`] it carries, both
+//! described by the schemas `json-schema` writes. The binary above it is
+//! wiring only, and says so in its own header.
 //!
 //! ## The golden fixture database
 //!
@@ -157,6 +160,9 @@
 //! modelled, so only those can be edited and the rest are kept on the line as
 //! they were. The parameters of a categories or free-busy list are not
 //! modelled either, and are likewise kept rather than editable.
+//!
+//! A line the document moved is written anew by ical-rs, folded at 75 octets,
+//! so its folds can land elsewhere than the calendar had them.
 
 extern crate alloc;
 #[cfg(feature = "cli")]
