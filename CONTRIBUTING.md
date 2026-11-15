@@ -13,13 +13,13 @@ Everything below documents only what differs from the Pimalaya standards.
 
 ## Feature matrix
 
-tCal speaks no protocol, so the layered build of the org guide does not apply here. It has one feature, `cli`, off by default: it carries the binary, clap, the editor and the clock, and it is the only thing pulling in the standard library.
+tCal speaks no protocol, so the layered build of the org guide does not apply here. It has one feature, `cli`, on by default: it carries the binary, clap, the editor and the clock, and it is the only thing pulling in the standard library. A library consumer turns it off with `default-features = false`.
 
 Build both, so that nothing std-only leaks into the `no_std` core:
 
 ```sh
-cargo build                                # the library alone, no_std over alloc
-cargo build --features cli                 # the library and the binary above it
+cargo build --no-default-features    # the library alone, no_std over alloc
+cargo build                          # the library and the binary above it
 ```
 
 tCal depends on the released ical-rs. To build against a local checkout, pass it on the command line rather than editing Cargo.toml:
@@ -39,5 +39,5 @@ tests/data is a golden database of calendars, described in the golden fixture da
 5. run the tests.
 
 ```sh
-cargo run --features cli -- template tests/data/NAME.ics -o tests/data/NAME.all.toml
+cargo run -- template tests/data/NAME.ics -o tests/data/NAME.all.toml
 ```

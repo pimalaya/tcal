@@ -75,7 +75,7 @@ This repository ships two interfaces: a Rust library projecting an iCalendar to 
 - **Every component type**: events, to-dos, journals, free/busy reports and time zones, narrowed to the ones you ask for.
 - **Minimal, lossless diffs**: only the lines you changed are re-rendered, and what tCal does not model is carried through verbatim.
 - **Three-way merge**: what two sides both changed comes back as duplicate TOML keys, which do not parse until you decide them.
-- **Slim library core**: the projection and the merge build without the standard library, the CLI living behind the opt-in `cli` feature.
+- **Slim library core**: the projection and the merge build without the standard library, the CLI living behind the `cli` feature, on by default.
 
 ## RFC coverage
 
@@ -110,10 +110,10 @@ For a more up-to-date version, check the [releases](https://github.com/pimalaya/
 
 ### Cargo
 
-The binary lives behind the `cli` feature, which is off by default so that a library consumer pays for none of it:
+The binary lives behind the `cli` feature, on by default; a library consumer turns it off with `default-features = false` and pays for none of it:
 
 ```sh
-cargo install --locked --features cli tcal
+cargo install --locked tcal
 ```
 
 The library alone is a `tcal` dependency, which pulls in none of that:
