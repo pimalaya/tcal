@@ -24,6 +24,7 @@ tCal takes the output and error contract the Pimalaya CLIs share. MIGRATION.md l
 - Changed an edited line longer than 75 octets to be folded, where it went out on one line (ical-rs 0.7).
 - Changed the help to print as written, no longer wrapped to the terminal width.
 - Changed the minimum supported Rust version to 1.89.
+- Moved to pimalaya-cli 0.5.
 - A date typed as a string tCal cannot read (`"martes 10:00"`) is now refused, naming the key (`edit` offers to re-edit it), instead of being written verbatim into a property no iCalendar reader accepts. A date pasted in iCalendar form (`"20260613T140000Z"`) is still accepted, and a value the calendar itself wrote in a form tCal does not read still round-trips untouched.
 - Changed piped `--json` output to print one value per line.
 
