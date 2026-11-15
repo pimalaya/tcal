@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+tCal takes the output and error contract the Pimalaya CLIs share. MIGRATION.md lists what to act on when upgrading from 0.2.
+
 ### Added
 
 - Added `json-schema`, which writes the JSON Schema of what each command prints, the failure object included.
