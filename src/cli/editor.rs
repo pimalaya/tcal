@@ -8,15 +8,11 @@
 //! exits. Nothing is captured: an editor handed a pipe instead of the terminal
 //! hangs, or draws where nothing reads.
 //!
-//! A document that does not fold back re-opens as the reader left it, so an
-//! edit is never lost, whether it is broken TOML or a collision still to
-//! decide.
+//! A document refused for what it holds re-opens as the reader left it, so an
+//! edit is never lost, whether it is broken TOML, a collision still to decide
+//! or a date that reads as none.
 
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{format, string::String, vec::Vec};
 
 use std::{
     env::{self, temp_dir},
@@ -25,15 +21,13 @@ use std::{
     process::{Command, ExitStatus, Stdio},
 };
 
-use anyhow::{Context, Error, Result, bail};
+use anyhow::{Context, Error, Result, anyhow, bail};
+use clap::error::ErrorKind;
 use log::{debug, info};
-use pimalaya_cli::{error::CodedError, printer::Printer, prompt};
+use pimalaya_cli::{error::usage_error, printer::Printer, prompt};
 use uuid::Uuid;
 
-use crate::{
-    cli::error::ErrorCode,
-    error::{TcalError, TcalResult},
-};
+use crate::error::{TcalError, TcalResult};
 
 /// The editor round trip over one TOML document.
 pub struct Editor<'a> {
@@ -46,9 +40,10 @@ pub struct Editor<'a> {
 impl Editor<'_> {
     /// Edit the document, then fold it back with `apply`.
     ///
-    /// A failed fold offers to re-open the editor on the buffer that failed,
-    /// looping until it applies or the reader declines. JSON output is
-    /// non-interactive and propagates the error instead.
+    /// A refusal of the edited document offers to re-open the editor on the
+    /// buffer that failed, looping until it applies or the reader declines.
+    /// JSON output refuses to start: the editor would draw on the stdout a
+    /// JSON caller reads.
     ///
     /// The temporary file goes when the fold succeeds, and stays, named in the
     /// error, when it does not: what someone typed outlives the run.
@@ -57,6 +52,13 @@ impl Editor<'_> {
         printer: &impl Printer,
         apply: impl Fn(&str) -> TcalResult<String>,
     ) -> Result<String> {
+        if printer.is_json() {
+            let message = "An editor cannot run under --json, which owns stdout: drop --json, \
+                           or fold an edited document back with `tcal apply`";
+            let err = clap::Error::raw(ErrorKind::ArgumentConflict, message);
+            return Err(usage_error(&err));
+        }
+
         let command = self.command()?;
         let path = temp_dir().join(format!("tcal-{}.toml", Uuid::new_v4()));
 
@@ -78,9 +80,8 @@ impl Editor<'_> {
             };
 
             if !status.success() {
-                let message = format!("Editor exited with {status}");
-                let err = CodedError::new(ErrorCode::EditorFailed, message);
-                return Err(keep(&path, err.into()));
+                let err = anyhow!("Editor exited with {status}");
+                return Err(keep(&path, err));
             }
 
             let edited =
@@ -94,20 +95,7 @@ impl Editor<'_> {
                 Err(err) => err,
             };
 
-            let message = match &err {
-                TcalError::ParseToml(err) if !printer.is_json() => {
-                    format!("Cannot parse TOML buffer:\n\n{err}\nRe-edit to fix it?")
-                }
-                TcalError::Undecided(key) if !printer.is_json() => format!(
-                    "Property {key} is left undecided.\n\nKeep one of its lines and delete the others. Re-edit to decide it?"
-                ),
-                TcalError::UnreadableDate { key, value } if !printer.is_json() => format!(
-                    "Cannot read {value:?} as a date for {key}.\n\nWrite it like 2026-06-13T14:30:00. Re-edit to fix it?"
-                ),
-                _ => return Err(keep(&path, err.into())),
-            };
-
-            if !prompt::bool(message, true)? {
+            if !err.is_document_refusal() || !prompt::bool(reprompt(&err), true)? {
                 return Err(keep(&path, err.into()));
             }
         }
@@ -131,8 +119,7 @@ impl Editor<'_> {
             }
         }
 
-        let message = "No editor found; set $VISUAL or $EDITOR, or pass --editor <COMMAND>";
-        Err(CodedError::new(ErrorCode::EditorMissing, message).into())
+        bail!("No editor found; set $VISUAL or $EDITOR, or pass --editor <COMMAND>")
     }
 }
 
@@ -160,7 +147,6 @@ fn spawn(command: &str, path: &PathBuf) -> Result<ExitStatus> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .map_err(|err| Error::new(CodedError::new(ErrorCode::EditorFailed, err.to_string())))
         .with_context(|| format!("Cannot spawn editor {program}"))
 }
 
@@ -173,5 +159,23 @@ fn keep(path: &PathBuf, err: Error) -> Error {
 fn remove(path: &PathBuf) {
     if let Err(err) = fs::remove_file(path) {
         debug!("cannot remove {path:?}: {err}");
+    }
+}
+
+/// The question asked after a refused document, and the offer to re-open.
+///
+/// It carries the parser's own detail when there is one.
+fn reprompt(err: &TcalError) -> String {
+    match err {
+        TcalError::ParseToml(err) => {
+            format!("Cannot parse TOML buffer:\n\n{err}\nRe-edit to fix it?")
+        }
+        TcalError::Undecided(key) => format!(
+            "Property {key} is left undecided.\n\nKeep one of its lines and delete the others. Re-edit to decide it?"
+        ),
+        TcalError::UnreadableDate { key, value } => format!(
+            "Cannot read {value:?} as a date for {key}.\n\nWrite it like 2026-06-13T14:30:00. Re-edit to fix it?"
+        ),
+        err => format!("{err}\n\nRe-edit to fix it?"),
     }
 }

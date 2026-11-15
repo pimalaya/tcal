@@ -71,6 +71,23 @@ impl fmt::Display for TcalError {
     }
 }
 
+impl TcalError {
+    /// Whether the error refuses the edited document, which the reader can
+    /// fix by editing it again: TOML that does not parse, a collision left
+    /// undecided, a date that reads as none.
+    ///
+    /// A calendar that does not read is not one: the reader cannot fix it
+    /// from the document.
+    pub fn is_document_refusal(&self) -> bool {
+        match self {
+            Self::ParseToml(_) | Self::Undecided(_) | Self::UnreadableDate { .. } => true,
+            Self::ParseICalendar(_) | Self::ReadCalendar { .. } | Self::UnknownComponent(_) => {
+                false
+            }
+        }
+    }
+}
+
 impl error::Error for TcalError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
