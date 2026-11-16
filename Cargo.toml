@@ -36,7 +36,7 @@ name = "tcal"
 path = "src/lib.rs"
 
 [build-dependencies]
-pimalaya-cli = { version = "0.5", default-features = false, features = ["build"], optional = true }
+pimalaya-cli = { version = "0.6", default-features = false, features = ["build"], optional = true }
 
 [[test]]
 name = "output"
@@ -54,7 +54,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 clap = { version = "4.4", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"], optional = true }
 ical-rs = { version = "0.7", default-features = false, features = ["parser"] }
 log = { version = "0.4", default-features = false }
-pimalaya-cli = { version = "0.5", default-features = false, features = ["prompt", "terminal"], optional = true }
+pimalaya-cli = { version = "0.6", default-features = false, features = ["prompt", "terminal"], optional = true }
 schemars = { version = "1", default-features = false, features = ["derive"], optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
