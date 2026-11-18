@@ -30,6 +30,7 @@ tCal takes the output and error contract the Pimalaya CLIs share. MIGRATION.md l
 
 ### Fixed
 
+- Fixed install.sh saving an HTTP error page as the archive and letting `tar` fail on it: it downloads with `curl -fsSLo` and stops on the error.
 - Fixed a date typed as a string with a `T` between date and time, the shape the template hints show (`"2026-10-20T10:30:00"`), being written verbatim into an invalid property; a trailing `Z` now reads as UTC too.
 
 ## [0.2.0] - 2026-09-01
