@@ -30,6 +30,7 @@ tCal takes the output and error contract the Pimalaya CLIs share. MIGRATION.md l
 
 ### Fixed
 
+- Fixed the file the editor opens on being readable by other users under a permissive umask: it is created 0600 on Unix through pimalaya-cli 0.6.1, and a file or a symbolic link planted at its path is refused rather than written through.
 - Fixed install.sh saving an HTTP error page as the archive and letting `tar` fail on it: it downloads with `curl -fsSLo` and stops on the error.
 - Fixed a date typed as a string with a `T` between date and time, the shape the template hints show (`"2026-10-20T10:30:00"`), being written verbatim into an invalid property; a trailing `Z` now reads as UTC too.
 

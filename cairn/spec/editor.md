@@ -24,7 +24,7 @@ The value SHALL be split on whitespace into a command and its arguments, so `cod
 `edit` and `merge` SHALL take `--editor <COMMAND>`, which wins over both variables for that invocation. It is what makes the round trip scriptable and a broken environment recoverable without changing it, and it is spelled as tCard spells it.
 
 ### Requirement: The document is handed over as a file, never as a pipe
-tCal SHALL write the document to `tcal-<uuid>.toml` in the temporary directory, spawn the editor on that path with stdin, stdout and stderr all inherited, and read the file back when the command exits. It SHALL capture none of the three: an editor handed a pipe instead of the terminal hangs, or draws where nothing reads.
+tCal SHALL write the document to `tcal-<uuid>.toml` in the temporary directory, created anew and readable by its owner alone on Unix whatever the umask (0600, pimalaya-cli's `file::private_options`), a file or a symbolic link already at its path refused rather than written through, spawn the editor on that path with stdin, stdout and stderr all inherited, and read the file back when the command exits. It SHALL capture none of the three: an editor handed a pipe instead of the terminal hangs, or draws where nothing reads.
 
 A non-zero exit status SHALL abandon the round trip and report it.
 
