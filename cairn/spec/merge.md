@@ -169,3 +169,13 @@ The left side is the local calendar, whose bytes the merged calendar is built fr
 - GIVEN a conflict the merge reported
 - WHEN it is read against the four calendars
 - THEN its left side is taken first, and the reading is the same note or choice either way
+
+### Requirement: Both sides' attachments are kept
+A merge where both sides replaced an attachment SHALL keep both new ones and offer no choice: ical-rs merges `ATTACH` lines as a set, so the document shows two `[[attach]]` tables and folds back as the merged calendar.
+
+tCard settles a media collision instead, a vCard property being one value per side; the twins differ because their merges do.
+
+#### Scenario: Two sides replace one attachment
+- GIVEN a base holding one inline attachment, which each side replaces with bytes of its own
+- WHEN the merge is projected
+- THEN the merged calendar holds both sides' attachments and not the base's, the document shows two `[[event.attach]]` tables and no choice, and folding it back gives the merged calendar

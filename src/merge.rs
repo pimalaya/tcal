@@ -61,7 +61,7 @@ use crate::{
         document::Document,
         sides::{Reading, Sides},
     },
-    template::TcalTemplate,
+    template::{TcalFiles, TcalTemplate},
 };
 
 /// A three-way merge waiting to run.
@@ -118,6 +118,7 @@ impl TcalMerge<'_> {
         let projected = TcalTemplate {
             calendar: sides.merged.clone(),
             types: Vec::new(),
+            files: None,
         }
         .project();
 
@@ -128,7 +129,11 @@ impl TcalMerge<'_> {
         }
         .decorate();
 
-        Ok(TcalMerged { ical, toml })
+        Ok(TcalMerged {
+            ical,
+            toml,
+            files: None,
+        })
     }
 }
 
@@ -141,6 +146,8 @@ pub struct TcalMerged {
     /// What the merge settled reads as header comments, what it did not as
     /// duplicate keys.
     pub toml: String,
+    /// Reads a file the document names, as [`TcalTemplate::files`] does.
+    pub files: Option<TcalFiles>,
 }
 
 impl TcalMerged {
@@ -150,7 +157,9 @@ impl TcalMerged {
     /// than as the syntax error the duplicate key it is written as would
     /// otherwise be.
     pub fn apply(&self, edited: &str) -> TcalResult<String> {
-        let applied = TcalTemplate::parse(&self.ical)?.apply(edited);
+        let mut template = TcalTemplate::parse(&self.ical)?;
+        template.files = self.files;
+        let applied = template.apply(edited);
 
         applied.map_err(|err| match err {
             TcalError::ParseToml(err) => match undecided(edited, &err) {
@@ -360,6 +369,30 @@ mod tests {
         );
         assert!(!merged.toml.contains("# conflict"), "offered as a choice");
         assert!(merged.apply(&merged.toml).is_ok());
+    }
+
+    #[test]
+    fn attachments_both_sides_replaced_are_both_kept() {
+        let attached = "SUMMARY:Standup\r\nATTACH;ENCODING=BASE64;VALUE=BINARY:YmFzZQ==";
+        let base = edited(BASE, "SUMMARY:Standup", attached);
+        let local = edited(&base, "YmFzZQ==", "bG9jYWw=");
+        let remote = edited(&base, "YmFzZQ==", "cmVtb3Rl");
+
+        let merged = TcalMerge {
+            base: &base,
+            local: &local,
+            remote: &remote,
+        }
+        .project()
+        .unwrap();
+
+        assert!(merged.ical.contains("bG9jYWw="), "{}", merged.ical);
+        assert!(merged.ical.contains("cmVtb3Rl"), "{}", merged.ical);
+        assert!(!merged.ical.contains("YmFzZQ=="), "{}", merged.ical);
+        assert_eq!(merged.toml.matches("[[event.attach]]").count(), 2);
+        assert!(!merged.toml.contains("# remote"), "offered as a choice");
+
+        assert_eq!(merged.apply(&merged.toml).unwrap(), merged.ical);
     }
 
     #[test]

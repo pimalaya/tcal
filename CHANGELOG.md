@@ -10,6 +10,7 @@ tCal takes the output and error contract the Pimalaya CLIs share. MIGRATION.md l
 
 ### Added
 
+- Added attachments: `ATTACH` on events, to-dos and journals projects as `[[attach]]` tables, inline bytes shown as `embedded.type` and `embedded.sha256` rather than base64, a `file` key inlining a local file, and `uri` for a reference. A digest the calendar does not hold fails coded `embedded-unknown`, a file that cannot be read `file-unreadable`; `edit` and `merge` offer to re-edit both.
 - Added `json-schema`, which writes the JSON Schema of what each command prints, the failure object included.
 - Added a stable `code` to the failure object: `calendar-unreadable`, `template-unreadable`, `collision-undecided`, `date-unreadable`, `component-unknown`, and `usage-invalid` for a command line refused, by the parser or after it (`apply - -`, both inputs on stdin).
 

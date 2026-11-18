@@ -34,7 +34,7 @@ The re-open loop SHALL survive a reader who declines it: when a document that do
 An editor that could not be spawned at all SHALL remove it instead: the file then holds nothing but what tCal wrote a moment earlier.
 
 ### Requirement: The editor re-opens on a document it cannot fold
-`edit` and `merge` SHALL offer to re-open the editor on a refusal of the edited document, which the reader can fix by editing it again: TOML that does not parse, a collision left undecided, a date that reads as none. They SHALL NOT offer it on any other failure: a calendar that does not read, an editor that failed or exited with a failure, a temporary file that cannot be read back. tCard follows the same rule over its own refusals.
+`edit` and `merge` SHALL offer to re-open the editor on a refusal of the edited document, which the reader can fix by editing it again: TOML that does not parse, a collision left undecided, a date that reads as none, a digest the calendar does not hold, a file that cannot be read. They SHALL NOT offer it on any other failure: a calendar that does not read, an editor that failed or exited with a failure, a temporary file that cannot be read back. tCard follows the same rule over its own refusals.
 
 ### Requirement: No editor runs under JSON
 `edit` and `merge` SHALL refuse `--json` before opening an editor, failing coded `usage-invalid` and exiting 2: the editor would draw on the stdout a JSON caller reads, and its prompts wait on a reader who is a program. A caller wanting JSON edits the document itself and folds it back with `apply`.

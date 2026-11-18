@@ -19,7 +19,7 @@ use pimalaya_cli::{clap::parsers::path_parser, error::usage_error, printer::Prin
 
 use crate::{
     cli::{
-        args::{ComponentFlags, SourceArg},
+        args::{ComponentFlags, SourceArg, read_file},
         output::DocumentOutput,
     },
     template::TcalTemplate,
@@ -68,9 +68,9 @@ impl ApplyCommand {
 
         let edited = self.read()?;
         let source = self.source.load()?;
-        let out = TcalTemplate::parse(&source)?
-            .with_types(&self.components.selected())?
-            .apply(&edited)?;
+        let mut template = TcalTemplate::parse(&source)?.with_types(&self.components.selected())?;
+        template.files = Some(read_file);
+        let out = template.apply(&edited)?;
 
         let target = self.output.or_else(|| self.source.file_path());
 

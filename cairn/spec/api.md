@@ -53,7 +53,7 @@ A file holding every verb of a CLI, or every part of a merge, is navigable by sc
 ### Requirement: The error enum is written by hand
 The crate error SHALL implement Display and Error by hand rather than derive them from a dependency.
 
-One enum of five variants is five match arms, and the crate below it writes its own the same way. A derive dependency earns its place where the enum is large or the source chaining is intricate, and this one is neither.
+One enum of eight variants is eight match arms, and the crate below it writes its own the same way. A derive dependency earns its place where the enum is large or the source chaining is intricate, and this one is neither.
 
 #### Scenario: The dependency list of the core
 - GIVEN the library built with no features

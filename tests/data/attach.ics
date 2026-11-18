@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//tCal//attach fixture//EN
+BEGIN:VEVENT
+UID:attach@example.com
+DTSTAMP:20260101T000000Z
+DTSTART:20260613T140000Z
+SUMMARY:Review the report
+ATTACH;FMTTYPE=application/postscript:ftp://example.com/pub/reports/r-960812.ps
+ATTACH;FMTTYPE=text/plain;X-FILENAME=notes.txt;ENCODING=BASE64;VALUE=BINARY:VGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZy4=
+ATTACH:CID:jsmith.part3.960817T083000.xyzMail@example.com
+END:VEVENT
+END:VCALENDAR

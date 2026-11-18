@@ -79,9 +79,9 @@ This repository ships two interfaces: a Rust library projecting an iCalendar to 
 
 ## RFC coverage
 
-| RFC    | What is covered                                                                                                                |
-|--------|--------------------------------------------------------------------------------------------------------------------------------|
-| [5545] | iCalendar: events, to-dos, journals, free/busy reports, time zones and alarms, their recurrence rules, durations and attendees |
+| RFC    | What is covered                                                                                                                             |
+|--------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| [5545] | iCalendar: events, to-dos, journals, free/busy reports, time zones and alarms, their recurrence rules, durations, attendees and attachments |
 
 [5545]: https://www.rfc-editor.org/rfc/rfc5545
 

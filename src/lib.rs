@@ -61,10 +61,15 @@
 //! it, so `date-start` can read well without `DTSTART` moving, and carries the
 //! inline hint and the kind that drives both directions.
 //!
-//! A kind is one of nine. Beyond the plain scalar, number and list there are
+//! A kind is one of ten. Beyond the plain scalar, number and list there are
 //! an enum whose variants are lowercase in hints and uppercased on export, a
 //! date carrying an adjacent timezone key, a calendar address that strips and
-//! restores `mailto:`, a UTC offset, and an attendee section.
+//! restores `mailto:`, a UTC offset, an attendee section and an attachment
+//! section.
+//!
+//! An attachment shows inline bytes as their digest and names a local file to
+//! inline. The crate reads none itself: [`template::TcalTemplate::files`] is
+//! the reader its caller hands it, the CLI's being the filesystem.
 //!
 //! Recurrence and duration are the two that expand into dotted keys, each
 //! with a raw escape hatch for a value tCal cannot break apart. `UID` and

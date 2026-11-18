@@ -38,6 +38,9 @@ recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
 recurrence.by-position = []	# nth occurrence in the period; -1 = last
 recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
 
+[[event.attach]]
+file = ""			# a local file, or uri = "https://"
+
 [[event.attendee]]
 display-name = ""
 value = ""			# email address
@@ -97,6 +100,9 @@ recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
 recurrence.by-position = []	# nth occurrence in the period; -1 = last
 recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
 
+[[todo.attach]]
+file = ""			# a local file, or uri = "https://"
+
 [[todo.attendee]]
 display-name = ""
 value = ""			# email address
@@ -142,6 +148,9 @@ recurrence.by-month = []	# 1 to 12
 recurrence.by-month-day = []	# 1 to 31, negative counts from the end (-1 = last)
 recurrence.by-position = []	# nth occurrence in the period; -1 = last
 recurrence.week-start = ""	# mo, tu, we, th, fr, sa, su
+
+[[journal.attach]]
+file = ""			# a local file, or uri = "https://"
 
 [[journal.attendee]]
 display-name = ""

@@ -99,7 +99,7 @@ fn extension() -> impl Strategy<Value = String> {
         Just("X-VENDOR-THING".to_owned()),
         Just("CONTACT".to_owned()),
         Just("RELATED-TO".to_owned()),
-        Just("ATTACH".to_owned()),
+        Just("COMMENT".to_owned()),
     ]
 }
 
@@ -234,7 +234,7 @@ fn is_unmodelled(line: &str) -> bool {
 
     matches!(
         name,
-        "X-CUSTOM" | "X-VENDOR-THING" | "CONTACT" | "RELATED-TO" | "ATTACH"
+        "X-CUSTOM" | "X-VENDOR-THING" | "CONTACT" | "RELATED-TO" | "COMMENT"
     )
 }
 

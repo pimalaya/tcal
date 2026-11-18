@@ -36,6 +36,9 @@ recurrence.by-month-day = []		# 1 to 31, negative counts from the end (-1 = last
 recurrence.by-position = []		# nth occurrence in the period; -1 = last
 recurrence.week-start = ""		# mo, tu, we, th, fr, sa, su
 
+[[attach]]
+file = ""				# a local file, or uri = "https://"
+
 [[attendee]]
 display-name = ""
 value = ""				# email address

@@ -11,7 +11,7 @@ use pimalaya_cli::{clap::parsers::path_parser, printer::Printer};
 
 use crate::{
     cli::{
-        args::{ComponentFlags, EditorArg, SourceArg},
+        args::{ComponentFlags, EditorArg, SourceArg, read_file},
         editor::Editor,
         output::DocumentOutput,
     },
@@ -47,7 +47,8 @@ impl EditCommand {
     /// Project the source, edit it, then write the folded-back iCalendar out.
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         let source = self.source.load()?;
-        let template = TcalTemplate::parse(&source)?.with_types(&self.components.selected())?;
+        let mut template = TcalTemplate::parse(&source)?.with_types(&self.components.selected())?;
+        template.files = Some(read_file);
 
         let projected = template.project();
         let editor = Editor {

@@ -35,7 +35,9 @@ A failure SHALL print the pimalaya-cli failure object, whose `code` is one of tC
 - `template-unreadable`: the TOML document does not parse;
 - `collision-undecided`: the document still holds a merge collision;
 - `date-unreadable`: a date field of the document reads as no date;
-- `component-unknown`: a component type names no modelled component.
+- `component-unknown`: a component type names no modelled component;
+- `embedded-unknown`: the document names an embedded attachment by a digest the calendar does not hold;
+- `file-unreadable`: a file the document names cannot be read.
 
 The library stays free of pimalaya-cli: it fails with `TcalError`, and the CLI gives the chain the code of the variant it carries, every message kept.
 

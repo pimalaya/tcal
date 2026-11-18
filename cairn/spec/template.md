@@ -112,3 +112,31 @@ A line the document moves SHALL be written anew by ical-rs, folded at 75 octets 
 - GIVEN an event holding a short summary
 - WHEN the summary is edited to a value longer than a line holds
 - THEN the summary goes out folded, no physical line longer than 75 octets
+
+### Requirement: An inline attachment is shown as its digest
+An `ATTACH` whose bytes the calendar carries, under `ENCODING=BASE64` or as a `data:` URI, SHALL project as `embedded.type`, its `FMTTYPE` lowercased when it declares one, and `embedded.sha256`, the full SHA-256 of its decoded bytes in lowercase hex, and never as those bytes. Any other value SHALL project as `uri`, as the calendar wrote it.
+
+#### Scenario: An inline attachment round trips untouched
+- GIVEN an event holding `ATTACH;FMTTYPE=text/plain;ENCODING=BASE64;VALUE=BINARY:Zm9v`
+- WHEN it is projected
+- THEN the form shows `embedded.type = "text/plain"` and the digest `printf foo | sha256sum` prints, and no base64
+- AND WHEN that form is folded back
+- THEN the calendar comes back byte-exact
+
+### Requirement: An unchanged attachment comes back as its own line
+A table carrying `embedded`, or a `uri` some line already holds, SHALL fold back as that line, byte for byte, wherever it stood. A digest no `ATTACH` line holds SHALL be refused, naming it.
+
+#### Scenario: Two attachments swapped
+- GIVEN an event holding an inline attachment then a referenced one, each with parameters of its own
+- WHEN their tables are swapped
+- THEN the two lines swap, each keeping its own parameters
+
+### Requirement: A file is inlined as base64 binary
+A table carrying `file` SHALL fold back as the bytes that file holds, written `FMTTYPE=<type>;ENCODING=BASE64;VALUE=BINARY`, the type read from the bytes as tCard reads them. The line it replaces SHALL keep every parameter but `ENCODING`, `VALUE` and `FMTTYPE`; a `uri` replacing bytes drops those three likewise.
+
+The library SHALL NOT read the file itself: the template SHALL carry a reader its caller provides, and a template without one SHALL refuse every `file`, as SHALL a reader failing, naming the path. Where one table carries several keys, `file` SHALL win over `uri`, and `uri` over `embedded`.
+
+#### Scenario: A PNG replaces a text attachment
+- GIVEN an inline attachment carrying `X-FILENAME=foo.txt`
+- WHEN its `embedded` is swapped for `file = "~/me.png"`
+- THEN the line reads `ATTACH;FMTTYPE=image/png;X-FILENAME=foo.txt;ENCODING=BASE64;VALUE=BINARY:...`, and projecting it again shows it as `embedded`

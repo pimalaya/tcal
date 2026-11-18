@@ -346,17 +346,7 @@ impl TcalProp for IcalLine<'_> {
     }
 
     fn param_value(&self, name: &str) -> Option<String> {
-        let logical = self.logical();
-
-        split(Content(&logical).head(), ';')
-            .into_iter()
-            .skip(1)
-            .find_map(|param| {
-                let (held, value) = param.split_once('=')?;
-
-                held.eq_ignore_ascii_case(name)
-                    .then(|| value.trim_matches('"').to_owned())
-            })
+        Content(&self.logical()).param(name).map(str::to_owned)
     }
 }
 

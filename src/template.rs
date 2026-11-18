@@ -13,12 +13,13 @@
 //! leaves the event alone.
 //!
 //! The modelled vocabulary lives in the model submodule, and the values with a
-//! shape of their own in datetime, duration and recurrence. `UID` and `DTSTAMP`
-//! are app-managed, not modelled.
+//! shape of their own in datetime, duration, recurrence and media. `UID` and
+//! `DTSTAMP` are app-managed, not modelled.
 
 mod datetime;
 mod duration;
 pub(crate) mod line;
+mod media;
 pub(crate) mod model;
 pub(crate) mod patch;
 mod recurrence;
@@ -45,6 +46,9 @@ use crate::{
     },
 };
 
+/// Reads the bytes of a file a document names, or says why it cannot.
+pub type TcalFiles = fn(&str) -> Result<Vec<u8>, String>;
+
 /// An iCalendar stream and the TOML form it is edited through.
 pub struct TcalTemplate<'a> {
     /// The calendar the form shows.
@@ -54,6 +58,10 @@ pub struct TcalTemplate<'a> {
     /// Set through [`TcalTemplate::with_types`], which resolves the keys a reader
     /// names into the specs behind them.
     pub(crate) types: Vec<&'static Spec>,
+    /// Reads a file an attachment names, the crate doing no I/O of its own.
+    ///
+    /// Without one, a document naming a file is refused.
+    pub files: Option<TcalFiles>,
 }
 
 impl<'a> TcalTemplate<'a> {
@@ -62,6 +70,7 @@ impl<'a> TcalTemplate<'a> {
         Ok(Self {
             calendar: TcalCalendar::parse(source)?,
             types: Vec::new(),
+            files: None,
         })
     }
 
@@ -113,9 +122,9 @@ impl<'a> TcalTemplate<'a> {
         // beside it in the stream, a bare component with no calendar around it.
         match calendar.0.first() {
             Some(root) if root.named("VCALENDAR") => {
-                reconcile(&mut calendar.0[0], &doc, blocky, &self.types, escaper)?
+                reconcile(&mut calendar.0[0], &doc, blocky, self, escaper)?
             }
-            _ => reconcile(&mut calendar, &doc, blocky, &self.types, escaper)?,
+            _ => reconcile(&mut calendar, &doc, blocky, self, escaper)?,
         }
 
         Ok(calendar.to_string())
@@ -189,15 +198,18 @@ fn reconcile<'a, C: TcalContainer<'a>>(
     container: &mut C,
     doc: &DocumentMut,
     blocky: bool,
-    filter: &[&Spec],
+    template: &TcalTemplate<'_>,
     escaper: Escaper,
 ) -> TcalResult<()> {
+    let filter = template.types.as_slice();
+    let files = template.files;
+
     if !blocky {
         let spec = filter.first().copied().unwrap_or(&VEVENT);
         let count = usize::from(block_has_content(doc.as_table(), spec));
         container.set_child_count(spec.name, count);
         if let Some(component) = container.children_mut(spec.name).next() {
-            apply_component(component, doc.as_table(), spec, escaper)?;
+            apply_component(component, doc.as_table(), spec, escaper, files)?;
         }
         return Ok(());
     }
@@ -219,7 +231,7 @@ fn reconcile<'a, C: TcalContainer<'a>>(
 
         container.set_child_count(spec.name, blocks.len());
         for (component, table) in container.children_mut(spec.name).zip(blocks) {
-            apply_component(component, table, spec, escaper)?;
+            apply_component(component, table, spec, escaper, files)?;
         }
     }
 
@@ -235,12 +247,14 @@ fn apply_component<'a>(
     table: &dyn TableLike,
     spec: &Spec,
     escaper: Escaper,
+    files: Option<TcalFiles>,
 ) -> TcalResult<()> {
     for field in spec.fields {
         let originals = component.lines(field.name);
 
         field.check(table, &originals)?;
-        component.set_lines(field.name, &field.content_lines(table, &originals), escaper);
+        let lines = field.content_lines(table, &originals, files)?;
+        component.set_lines(field.name, &lines, escaper);
     }
 
     for child in spec.children {
@@ -254,7 +268,7 @@ fn apply_component<'a>(
 
         component.set_child_count(child.name, blocks.len());
         for (kid, kid_table) in component.children_mut(child.name).zip(blocks) {
-            apply_component(kid, kid_table, child, escaper)?;
+            apply_component(kid, kid_table, child, escaper, files)?;
         }
     }
 
@@ -393,14 +407,15 @@ fn project_component(
     let sections: Vec<Vec<Line>> = spec
         .fields
         .iter()
-        .filter_map(|field| match field.kind {
-            Kind::Attendee { statuses } => Some((field, statuses)),
-            _ => None,
-        })
-        .map(|(field, statuses)| {
+        .filter(|field| !field.kind.is_simple())
+        .map(|field| {
             let entries = entries_for(component, field);
             let header = section_header(prefix, field.key);
-            attendee_section(&entries, &header, statuses)
+
+            match field.kind {
+                Kind::Attendee { statuses } => attendee_section(&entries, &header, statuses),
+                _ => field.attach_section(&entries, &header),
+            }
         })
         .collect();
 
@@ -457,24 +472,27 @@ fn attendee_section(entries: &[&IcalLine<'_>], header: &str, statuses: &str) -> 
 
 /// Whether a TOML block carries any modeled value.
 ///
-/// That is what tells a real component from an empty example placeholder.
+/// That is what tells a real component from an empty example placeholder. A
+/// field refusing its value is filled too, so the refusal surfaces when it is
+/// applied.
 fn block_has_content(table: &dyn TableLike, spec: &Spec) -> bool {
-    spec.fields
-        .iter()
-        .any(|field| !field.content_lines(table, &[]).is_empty())
-        || spec.children.iter().any(|child| {
-            table
-                .get(child.key)
-                .map(tables)
-                .unwrap_or_default()
-                .iter()
-                .any(|nested| block_has_content(*nested, child))
-        })
+    spec.fields.iter().any(|field| {
+        field
+            .content_lines(table, &[], None)
+            .map_or(true, |lines| !lines.is_empty())
+    }) || spec.children.iter().any(|child| {
+        table
+            .get(child.key)
+            .map(tables)
+            .unwrap_or_default()
+            .iter()
+            .any(|nested| block_has_content(*nested, child))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use alloc::{borrow::ToOwned, string::String, vec::Vec};
+    use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
 
     use crate::{
         error::{TcalError, TcalResult},
@@ -1135,5 +1153,137 @@ mod tests {
         assert!(at("date-end =") < at("duration.week ="));
         assert!(at("duration.sec =") < at("recurrence.frequency ="));
         assert!(at("recurrence.week-start =") < at("[[event.attendee]]"));
+        assert!(at("recurrence.week-start =") < at("[[event.attach]]"));
+        assert!(at("[[event.attach]]") < at("[[event.attendee]]"));
+    }
+
+    /// An event holding an inline text file and a referenced one.
+    const ATTACHED: &str = "BEGIN:VCALENDAR\r\n\
+        VERSION:2.0\r\n\
+        PRODID:-//Test//EN\r\n\
+        BEGIN:VEVENT\r\n\
+        UID:abc@example\r\n\
+        DTSTAMP:20260101T000000Z\r\n\
+        SUMMARY:Review\r\n\
+        ATTACH;FMTTYPE=text/plain;X-FILENAME=foo.txt;ENCODING=BASE64;VALUE=BINARY:Zm9v\r\n\
+        ATTACH;FMTTYPE=application/pdf;X-LABEL=r:https://example.com/r.pdf\r\n\
+        END:VEVENT\r\n\
+        END:VCALENDAR\r\n";
+
+    /// The digest of `foo`, what `printf foo | sha256sum` prints.
+    const FOO_SHA256: &str = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
+
+    /// The projected keys of the inline attachment.
+    fn foo_keys() -> String {
+        format!("embedded.type = \"text/plain\"\nembedded.sha256 = \"{FOO_SHA256}\"")
+    }
+
+    /// A reader handing every path the four bytes a PNG opens with.
+    fn png(_: &str) -> Result<Vec<u8>, String> {
+        Ok(alloc::vec![0x89, b'P', b'N', b'G'])
+    }
+
+    #[test]
+    fn an_inline_attachment_is_its_digest() {
+        let toml = project_one(ATTACHED, "event").unwrap();
+
+        assert!(toml.contains(&foo_keys()), "{toml}");
+        assert!(
+            toml.contains("uri = \"https://example.com/r.pdf\""),
+            "{toml}"
+        );
+        assert!(!toml.contains("Zm9v"), "{toml}");
+
+        let out = apply_with(ATTACHED, &toml, &["event".to_owned()]).unwrap();
+        assert_eq!(out, ATTACHED);
+    }
+
+    #[test]
+    fn reordered_attachments_keep_their_own_lines() {
+        let toml = project_one(ATTACHED, "event").unwrap();
+        let uri = "uri = \"https://example.com/r.pdf\"";
+        let swapped = toml
+            .replace(&foo_keys(), "SWAP")
+            .replace(uri, &foo_keys())
+            .replace("SWAP", uri);
+
+        let out = apply_with(ATTACHED, &swapped, &["event".to_owned()])
+            .unwrap()
+            .replace("\r\n ", "");
+
+        let pdf = out
+            .find("ATTACH;FMTTYPE=application/pdf;X-LABEL=r:https")
+            .unwrap();
+        let foo = out
+            .find("ATTACH;FMTTYPE=text/plain;X-FILENAME=foo.txt;")
+            .unwrap();
+        assert!(pdf < foo, "{out}");
+    }
+
+    #[test]
+    fn a_file_replaces_an_attachment_keeping_its_parameters() {
+        let mut template = TcalTemplate::parse(ATTACHED).unwrap();
+        template.files = Some(png);
+
+        let toml = template
+            .project()
+            .replace(&foo_keys(), "file = \"~/me.png\"");
+        let out = template.apply(&toml).unwrap().replace("\r\n ", "");
+
+        assert!(
+            out.contains("ATTACH;FMTTYPE=image/png;X-FILENAME=foo.txt;ENCODING=BASE64;VALUE=BINARY:iVBORw==\r\n"),
+            "{out}"
+        );
+        assert!(project(&out).contains("embedded.type = \"image/png\""));
+    }
+
+    #[test]
+    fn a_uri_replacing_bytes_drops_their_encoding() {
+        let toml = project_one(ATTACHED, "event")
+            .unwrap()
+            .replace(&foo_keys(), "uri = \"https://example.com/foo.txt\"");
+
+        let out = apply_with(ATTACHED, &toml, &["event".to_owned()]).unwrap();
+
+        assert!(
+            out.contains("ATTACH;X-FILENAME=foo.txt:https://example.com/foo.txt\r\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_digest_is_refused() {
+        let toml = project_one(ATTACHED, "event")
+            .unwrap()
+            .replace(FOO_SHA256, &"0".repeat(64));
+
+        let err = apply_with(ATTACHED, &toml, &["event".to_owned()]).unwrap_err();
+        assert!(matches!(err, TcalError::UnknownEmbedded(_)), "{err}");
+        assert!(err.is_document_refusal());
+    }
+
+    #[test]
+    fn a_file_with_no_reader_is_refused() {
+        let toml = project_one(ATTACHED, "event")
+            .unwrap()
+            .replace(&foo_keys(), "file = \"~/me.png\"");
+
+        let err = apply_with(ATTACHED, &toml, &["event".to_owned()]).unwrap_err();
+        assert!(matches!(err, TcalError::ReadFile { .. }), "{err}");
+        assert!(err.is_document_refusal());
+    }
+
+    #[test]
+    fn an_attachment_alone_makes_a_new_event() {
+        let mut template = TcalTemplate::parse("").unwrap();
+        template.files = Some(png);
+
+        let toml = template
+            .project()
+            .replacen("file = \"\"", "file = \"~/me.png\"", 1);
+        let out = template.apply(&toml).unwrap();
+
+        assert!(out.contains("BEGIN:VEVENT"), "{out}");
+        assert!(out.contains("ATTACH;FMTTYPE=image/png;ENCODING=BASE64;VALUE=BINARY:iVBORw=="));
     }
 }

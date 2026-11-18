@@ -3,7 +3,12 @@
 //! The source a verb reads its calendar from, the component types it shows and
 //! the editor it opens.
 
-use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use std::{
     fs,
@@ -157,4 +162,13 @@ pub struct EditorArg {
     /// must block until the edit is done: use `code --wait`, not `code`.
     #[arg(short, long, value_name = "COMMAND")]
     pub editor: Option<String>,
+}
+
+/// Reads a file a document names, `~` and variables expanded.
+///
+/// It is the reader every verb hands the library, which does no I/O.
+pub fn read_file(path: &str) -> core::result::Result<Vec<u8>, String> {
+    let path = path_parser(path)?;
+    info!("reading file {path:?}");
+    fs::read(&path).map_err(|err| err.to_string())
 }

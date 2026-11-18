@@ -18,9 +18,11 @@ use crate::{
     error::{TcalError, TcalResult},
     ical::TcalProp,
     template::{
+        TcalFiles,
         datetime::{DATE_HINT, date_line, is_utc, parse_friendly_date, toml_date, toml_date_line},
         duration::{duration_lines, duration_value},
         line::Line,
+        media::{ENCODING_PARAMS, Media, inlined, referenced},
         patch::{Content, ensure_mailto, escape, strip_mailto},
         recurrence::{recur_lines, recur_rule},
         toml::{push_param, tables, toml_array, toml_number, toml_str},
@@ -57,12 +59,17 @@ pub(crate) enum Kind {
     ///
     /// The sign is implied by context, `negative` for an alarm trigger.
     Duration { negative: bool },
+    /// Repeatable attachment as one `[[<key>]]` table per line.
+    ///
+    /// Each instance is one of `embedded` (the digest of inline bytes),
+    /// `file` (a local path to inline) or `uri` (a reference).
+    Attach,
 }
 
 impl Kind {
     /// A bare/inline key, vs the sectioned attendee array-of-tables.
     pub(crate) fn is_simple(&self) -> bool {
-        !matches!(self, Kind::Attendee { .. })
+        !matches!(self, Kind::Attendee { .. } | Kind::Attach)
     }
 }
 
@@ -167,6 +174,12 @@ const FIELDS: &[Field] = &[
         name: "RRULE",
         hint: None,
         kind: Kind::Recur,
+    },
+    Field {
+        key: "attach",
+        name: "ATTACH",
+        hint: Some("a local file, or uri = \"https://\""),
+        kind: Kind::Attach,
     },
     Field {
         key: "attendee",
@@ -317,6 +330,12 @@ const TODO_FIELDS: &[Field] = &[
         kind: Kind::Recur,
     },
     Field {
+        key: "attach",
+        name: "ATTACH",
+        hint: Some("a local file, or uri = \"https://\""),
+        kind: Kind::Attach,
+    },
+    Field {
         key: "attendee",
         name: "ATTENDEE",
         hint: None,
@@ -381,6 +400,12 @@ const JOURNAL_FIELDS: &[Field] = &[
         name: "RRULE",
         hint: None,
         kind: Kind::Recur,
+    },
+    Field {
+        key: "attach",
+        name: "ATTACH",
+        hint: Some("a local file, or uri = \"https://\""),
+        kind: Kind::Attach,
     },
     Field {
         key: "attendee",
@@ -646,7 +671,8 @@ impl Field {
 
             // NOTE: an attendee has no line of its own. Its keys are written
             // by attendee_keys, under the header its parent component writes.
-            Kind::Attendee { .. } => Vec::new(),
+            // An attachment's are written by attach_section the same way.
+            Kind::Attendee { .. } | Kind::Attach => Vec::new(),
         }
     }
 
@@ -658,6 +684,7 @@ impl Field {
         match self.kind {
             Kind::Attendee { .. } => &["CN", "ROLE", "PARTSTAT"],
             Kind::Date => &["TZID", "VALUE"],
+            Kind::Attach => ENCODING_PARAMS,
             _ => &[],
         }
     }
@@ -702,13 +729,19 @@ impl Field {
     /// Empty when absent or blank, so [`crate::ical::TcalComponent::set_lines`]
     /// removes the property. `originals` are its lines in projection order,
     /// each patched rather than rebuilt: a parameter the document omits stays.
+    ///
+    /// `files` reads a file an attachment names, none refusing every one. An
+    /// embedded digest or an unchanged URI folds back as whichever line holds
+    /// it, not only the one at its position, so reordering attachments moves
+    /// their lines, each kept whole rather than patched onto another.
     pub(crate) fn content_lines(
         &self,
         source: &dyn TableLike,
         originals: &[String],
-    ) -> Vec<String> {
+        files: Option<TcalFiles>,
+    ) -> TcalResult<Vec<String>> {
         let Some(item) = source.get(self.key) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
 
         // NOTE: each line carries the original it patches onto, which the list
@@ -827,16 +860,112 @@ impl Field {
                     lines.push((originals.first(), format!("{}:{}", self.name, value)));
                 }
             }
+
+            Kind::Attach => {
+                for (instance, table) in tables(item).into_iter().enumerate() {
+                    let original = originals.get(instance);
+                    let written = |key| {
+                        table
+                            .get(key)
+                            .and_then(|item| item.as_str())
+                            .filter(|value| !value.is_empty())
+                    };
+
+                    if let Some(path) = written("file") {
+                        let bytes = read(files, path)?;
+                        lines.push((original, inlined(self.name, &bytes)));
+                    } else if let Some(uri) = written("uri") {
+                        let held = originals.iter().find(
+                            |line| matches!(Media::of(line), Media::Uri(held) if held == uri),
+                        );
+
+                        match held {
+                            Some(line) => lines.push((None, line.clone())),
+                            None => lines.push((original, referenced(self.name, original, uri))),
+                        }
+                    } else if let Some(sha256) = table
+                        .get("embedded")
+                        .and_then(|item| item.as_table_like())
+                        .and_then(|embedded| embedded.get("sha256"))
+                        .and_then(|item| item.as_str())
+                        .filter(|sha256| !sha256.is_empty())
+                    {
+                        let held = originals.iter().find(|line| match Media::of(line) {
+                            Media::Embedded { sha256: held, .. } => {
+                                held.eq_ignore_ascii_case(sha256)
+                            }
+                            Media::Uri(_) => false,
+                        });
+
+                        match held {
+                            Some(line) => lines.push((None, line.clone())),
+                            None => return Err(TcalError::UnknownEmbedded(sha256.to_owned())),
+                        }
+                    }
+                }
+            }
         }
 
-        lines
+        Ok(lines
             .into_iter()
             .map(|(original, line)| match original {
                 Some(original) => Content(original).rewritten(&line, self.params()),
                 None => line,
             })
-            .collect()
+            .collect())
     }
+
+    /// Render an attachment field as one `[[header]]` block per line.
+    ///
+    /// A field no line wrote gets a single empty example instead. No line but
+    /// the example's carries a hint: a digest or a long URI would push the
+    /// whole component's comment column out with it.
+    pub(crate) fn attach_section(&self, entries: &[&IcalLine<'_>], header: &str) -> Vec<Line> {
+        let mut lines = Vec::new();
+        let mut push = |lhs: String, hint: Option<&str>| {
+            lines.push(Line {
+                lhs,
+                hint: hint.map(str::to_owned),
+            })
+        };
+
+        if entries.is_empty() {
+            push(format!("[[{header}]]"), None);
+            push("file = \"\"".to_owned(), self.hint);
+        }
+
+        for entry in entries {
+            push(format!("[[{header}]]"), None);
+
+            let logical = entry.logical();
+
+            match Media::of(&logical) {
+                Media::Embedded { mediatype, sha256 } => {
+                    if let Some(mediatype) = mediatype {
+                        push(format!("embedded.type = {}", toml_str(&mediatype)), None);
+                    }
+
+                    push(format!("embedded.sha256 = {}", toml_str(&sha256)), None);
+                }
+                Media::Uri(uri) => push(format!("uri = {}", toml_str(uri)), None),
+            }
+        }
+
+        lines
+    }
+}
+
+/// The bytes of a file the document names, through the caller's reader.
+fn read(files: Option<TcalFiles>, path: &str) -> TcalResult<Vec<u8>> {
+    let read = files.ok_or_else(|| TcalError::ReadFile {
+        path: path.to_owned(),
+        message: "no file reader given".to_owned(),
+    })?;
+
+    read(path).map_err(|message| TcalError::ReadFile {
+        path: path.to_owned(),
+        message,
+    })
 }
 
 /// Give a list field's items back to the lines they came from.

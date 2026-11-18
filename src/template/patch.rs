@@ -25,6 +25,18 @@ impl<'a> Content<'a> {
         self.0.get(colon(self.0) + 1..).unwrap_or_default()
     }
 
+    /// The first value of a named parameter, unquoted (RFC 5545 section 3.2).
+    pub fn param(&self, name: &str) -> Option<&'a str> {
+        split(self.head(), ';')
+            .into_iter()
+            .skip(1)
+            .find_map(|param| {
+                let (held, value) = param.split_once('=')?;
+                held.eq_ignore_ascii_case(name)
+                    .then(|| value.trim_matches('"'))
+            })
+    }
+
     /// The value as one unescaped string, its commas kept literal.
     pub fn text(&self) -> String {
         unescape(self.value())

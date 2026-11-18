@@ -38,6 +38,10 @@ pub enum ErrorCode {
     DateUnreadable,
     /// A component type names no modelled component.
     ComponentUnknown,
+    /// The document names an embedded digest the calendar does not hold.
+    EmbeddedUnknown,
+    /// A file the document names cannot be read.
+    FileUnreadable,
 }
 
 impl From<&TcalError> for ErrorCode {
@@ -50,6 +54,8 @@ impl From<&TcalError> for ErrorCode {
             TcalError::Undecided(_) => Self::CollisionUndecided,
             TcalError::UnreadableDate { .. } => Self::DateUnreadable,
             TcalError::UnknownComponent(_) => Self::ComponentUnknown,
+            TcalError::UnknownEmbedded(_) => Self::EmbeddedUnknown,
+            TcalError::ReadFile { .. } => Self::FileUnreadable,
         }
     }
 }

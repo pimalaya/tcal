@@ -41,6 +41,16 @@ pub enum TcalError {
     ParseToml(toml_edit::TomlError),
     /// A requested component type key names no modelled component type.
     UnknownComponent(String),
+    /// The document names an embedded attachment by a digest the calendar
+    /// does not hold.
+    UnknownEmbedded(String),
+    /// A file the document names cannot be read.
+    ReadFile {
+        /// The path as the document wrote it.
+        path: String,
+        /// Why it could not be read.
+        message: String,
+    },
 }
 
 impl fmt::Display for TcalError {
@@ -67,6 +77,12 @@ impl fmt::Display for TcalError {
                 write!(f, "Unknown component {key:?}; ")?;
                 write!(f, "expected event, todo, journal, free-busy or timezone")
             }
+            Self::UnknownEmbedded(sha256) => {
+                write!(f, "Embedded attachment {sha256} is not in the calendar")
+            }
+            Self::ReadFile { path, message } => {
+                write!(f, "Cannot read file {path}: {message}")
+            }
         }
     }
 }
@@ -74,13 +90,18 @@ impl fmt::Display for TcalError {
 impl TcalError {
     /// Whether the error refuses the edited document, which the reader can
     /// fix by editing it again: TOML that does not parse, a collision left
-    /// undecided, a date that reads as none.
+    /// undecided, a date that reads as none, a digest or a file path the
+    /// document names.
     ///
     /// A calendar that does not read is not one: the reader cannot fix it
     /// from the document.
     pub fn is_document_refusal(&self) -> bool {
         match self {
-            Self::ParseToml(_) | Self::Undecided(_) | Self::UnreadableDate { .. } => true,
+            Self::ParseToml(_)
+            | Self::Undecided(_)
+            | Self::UnreadableDate { .. }
+            | Self::UnknownEmbedded(_)
+            | Self::ReadFile { .. } => true,
             Self::ParseICalendar(_) | Self::ReadCalendar { .. } | Self::UnknownComponent(_) => {
                 false
             }
